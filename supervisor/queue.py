@@ -235,6 +235,8 @@ def restore_pending_from_snapshot(max_age_sec: int = 900) -> int:
             task = row.get("task") if isinstance(row, dict) else None
             if not isinstance(task, dict):
                 continue
+            if str(task.get("type") or "") == "evolution":
+                continue
             if not task.get("id") or not task.get("chat_id"):
                 continue
             enqueue_task(task)

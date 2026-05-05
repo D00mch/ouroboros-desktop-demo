@@ -86,7 +86,7 @@ SETTINGS_DEFAULTS = {
     # "advanced" preserves the existing self-modifying evolutionary layer and
     # is the safe default for current installs. "pro" is reserved for a
     # direct protected-surface lane guarded by the normal triad+scope review gate.
-    "OUROBOROS_RUNTIME_MODE": "advanced",
+    "OUROBOROS_RUNTIME_MODE": "light",
     # Optional EXTRA discovery root for an external skills/extensions
     # repository (the user's own git checkout). Ouroboros scans this on
     # top of the in-data-plane ``data/skills/`` tree (which is the

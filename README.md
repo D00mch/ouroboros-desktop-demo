@@ -416,9 +416,9 @@ Available in the chat interface:
 | `/panic` | Emergency stop. Kills ALL processes, closes the application. |
 | `/restart` | Soft restart. Saves state, kills workers, re-launches. |
 | `/status` | Shows active workers, task queue, and budget breakdown. |
-| `/evolve` | Toggle autonomous evolution mode (on/off). |
+| `/evolve` | Toggle autonomous evolution mode (on/off). Plain `python3 server.py` starts with persisted evolution mode off. |
 | `/review` | Queue a deep self-review: sends all agent code, prompts, docs, and core memory artifacts (identity, scratchpad, registry, WORLD, knowledge index, patterns, improvement-backlog) to a 1M-context model for Constitution-grounded analysis. Excludes vendored libraries and operational logs. Rejected with an explicit error if the assembled prompt (system + pack) exceeds ~850K estimated tokens — on 1M-context models the window is shared between input and output. |
-| `/bg` | Toggle background consciousness loop (start/stop/status). |
+| `/bg` | Toggle background consciousness loop (start/stop/status). Plain `python3 server.py` starts with persisted background consciousness off. |
 
 The same runtime actions are also exposed as compact buttons in the Chat header. All other messages are sent directly to the LLM.
 

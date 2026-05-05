@@ -219,6 +219,8 @@ def init_state() -> Dict[str, Any]:
     lock_fd = acquire_file_lock(STATE_LOCK_PATH)
     try:
         st = _load_state_unlocked()
+        st["evolution_mode_enabled"] = False
+        st["bg_consciousness_enabled"] = False
 
         # Capture session snapshots for drift detection
         st["session_spent_snapshot"] = float(st.get("spent_usd") or 0.0)

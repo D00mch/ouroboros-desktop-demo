@@ -597,8 +597,8 @@ immediately on a crash signal (SIGSEGV) with a diagnostic message suggesting
 | `/panic` | Kill workers (force), request restart exit |
 | `/restart` | Run `safe_restart` (git/deps/import preflight); on success, write `owner_restart_no_resume.flag` plus a stable-compatible skip marker, cancel active worker tasks with owner-restart result text, tell the owner the active task is stopping, exit 42 |
 | `/review` | Queue a deep self-review (1M-context single-pass Constitution review) |
-| `/evolve on\|off` | Toggle evolution mode in state, prune evolution tasks if off |
-| `/bg start\|stop\|status` | Control background consciousness |
+| `/evolve on\|off` | Toggle evolution mode in state, prune evolution tasks if off. Plain `python3 server.py` starts with persisted evolution mode off |
+| `/bg start\|stop\|status` | Control background consciousness. Plain `python3 server.py` starts with persisted background consciousness off |
 | `/status` | Send status text with budget breakdown |
 | (anything else) | Route to agent via `handle_chat_direct()` |
 
