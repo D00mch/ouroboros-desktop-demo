@@ -15,10 +15,9 @@ import base64
 import logging
 import pathlib
 import re
-import subprocess
 import sys
 import threading
-from typing import Any, Dict, List
+from typing import Any, List
 
 try:
     from playwright_stealth import Stealth
@@ -139,7 +138,7 @@ _set_playwright_browsers_path_if_bundled()
 
 
 def _ensure_playwright_installed():
-    """Install Playwright and Chromium if not already available."""
+    """Verify that optional Playwright browser dependencies are available."""
     global _playwright_ready
     if _playwright_ready:
         return
@@ -147,13 +146,11 @@ def _ensure_playwright_installed():
     try:
         import playwright  # noqa: F401
     except ImportError:
-        if getattr(sys, 'frozen', False):
-            raise RuntimeError(
-                "Browser tools require Playwright, which is not bundled. "
-                "Install manually: pip3 install playwright && python3 -m playwright install chromium"
-            )
-        log.info("Playwright not found, installing...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
+        raise RuntimeError(
+            "Browser tools require optional Playwright dependencies. "
+            "Install them explicitly with: pip install '.[browser]' && "
+            "python3 -m playwright install chromium"
+        )
 
     try:
         from playwright.sync_api import sync_playwright
@@ -161,14 +158,10 @@ def _ensure_playwright_installed():
             pw.chromium.executable_path
         log.info("Playwright chromium binary found")
     except Exception:
-        if getattr(sys, 'frozen', False):
-            raise RuntimeError(
-                "Playwright chromium binary not found. "
-                "Install manually: python3 -m playwright install chromium"
-            )
-        log.info("Installing Playwright chromium binary...")
-        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
-        subprocess.check_call([sys.executable, "-m", "playwright", "install-deps", "chromium"])
+        raise RuntimeError(
+            "Playwright chromium binary not found. Install it explicitly with: "
+            "python3 -m playwright install chromium"
+        )
 
     _playwright_ready = True
 

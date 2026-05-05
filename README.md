@@ -143,11 +143,13 @@ Docker is for the web UI/runtime flow, not the desktop bundle. The container bin
 `0.0.0.0:8765` by default, and the image now also defaults `OUROBOROS_FILE_BROWSER_DEFAULT`
 to `${APP_HOME}` so the Files tab always has an explicit network-safe root inside the container.
 
-> **Browser tools on Linux/Docker:** The `Dockerfile` runs `playwright install-deps chromium`
-> (authoritative Playwright dependency resolver) and `playwright install chromium` so
-> `browse_page` and `browser_action` work out of the box in the container. For source
-> installs on Linux without Docker, run:
+> **Browser tools on Linux/Docker:** Browser automation is optional for source/pod
+> installs and is not part of the default `requirements.txt`. To enable
+> `browse_page` and `browser_action` outside Docker, install `pip install '.[browser]'`,
+> then run:
 > `python3 -m playwright install-deps chromium` (requires sudo / distro package access).
+> The `Dockerfile` installs those optional browser dependencies separately and bundles
+> Chromium so browser tools work out of the box in the container.
 
 Build the image:
 

@@ -1729,11 +1729,12 @@ installs.
 ### Docker (`Dockerfile`)
 
 ```
-python:3.10-slim + git → pip install requirements → playwright install-deps chromium → playwright install chromium → python server.py
+python:3.10-slim + git → pip install requirements → pip install optional browser deps → playwright install-deps chromium → playwright install chromium → python server.py
 Binds 0.0.0.0:8765, sets OUROBOROS_FILE_BROWSER_DEFAULT=/app.
 ```
 
-From v4.40.2, the `Dockerfile` installs all native system dependencies via
+From v4.40.2, the `Dockerfile` installs optional browser dependencies separately from
+the default server `requirements.txt`, then installs all native system dependencies via
 `python3 -m playwright install-deps chromium` (the authoritative Playwright-managed
 dependency resolver, not a hand-curated apt list) **and** the Chromium browser binary
 itself (`PLAYWRIGHT_BROWSERS_PATH=0 python3 -m playwright install chromium`) so browser

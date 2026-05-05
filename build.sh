@@ -46,6 +46,9 @@ pip install -q -r requirements-launcher.txt
 echo "--- Installing agent dependencies into python-standalone ---"
 python-standalone/bin/pip3 install -q -r requirements.txt
 
+echo "--- Installing optional browser dependencies into python-standalone ---"
+python-standalone/bin/pip3 install -q playwright playwright-stealth
+
 echo "--- Installing Chromium for browser tools (bundled into python-standalone) ---"
 # macOS bundles only the headless shell; the full Chromium app bundle trips
 # PyInstaller's nested-bundle codesign path on arm64 runners.
