@@ -65,6 +65,7 @@ TOOL_POLICY: Dict[str, str] = {
     "repo_list": POLICY_SKIP,
     "data_read": POLICY_SKIP,
     "data_list": POLICY_SKIP,
+    "employee_lookup": POLICY_SKIP,
     "git_status": POLICY_SKIP,
     "git_diff": POLICY_SKIP,
     "chat_history": POLICY_SKIP,
