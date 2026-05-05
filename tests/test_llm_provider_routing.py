@@ -1,6 +1,149 @@
+import json
+
 import pytest
 import ouroboros.pricing as pricing_module
 from ouroboros.llm import LLMClient
+from ouroboros.demo_llm import DEMO_LLM_MODEL
+
+
+def test_chat_uses_fixed_demo_llm_url_and_mtls(monkeypatch):
+    monkeypatch.setenv("LLM_URL", "https://demo.example/v1/chat/completions")
+    captured = {}
+
+    class _Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                "model": "GigaChat-3-Ultra-preview:32.3.7.3",
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return _Response()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    msg, usage = LLMClient().chat(
+        messages=[{"role": "user", "content": "hi"}],
+        model="openai::ignored",
+        max_tokens=123,
+    )
+
+    assert captured["url"] == "https://demo.example/v1/chat/completions"
+    assert captured["kwargs"]["headers"] == {"Content-Type": "application/json"}
+    assert captured["kwargs"]["json"]["model"] == DEMO_LLM_MODEL
+    assert captured["kwargs"]["json"]["messages"] == [{"role": "user", "content": "hi"}]
+    assert captured["kwargs"]["json"]["max_tokens"] == 123
+    cert_path, key_path = captured["kwargs"]["cert"]
+    assert cert_path.endswith("/crt/giga.pem")
+    assert key_path.endswith("/crt/giga.key")
+    assert captured["kwargs"]["verify"] is False
+    assert msg["content"] == "ok"
+    assert usage["provider"] == "gigachat"
+    assert usage["resolved_model"] == "GigaChat-3-Ultra-preview:32.3.7.3"
+
+
+def test_chat_parses_demo_json_content_tool_call(monkeypatch):
+    monkeypatch.setenv("LLM_URL", "https://demo.example/v1/chat/completions")
+    captured = {}
+
+    class _Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            "```json\n"
+                            "{\n"
+                            '  "name": "echo_word",\n'
+                            '  "arguments": {"word": "data-science"}\n'
+                            "}\n"
+                            "```"
+                        ),
+                    }
+                }],
+                "model": "GigaChat-3-Ultra-preview:32.3.7.3",
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return _Response()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "echo_word",
+            "description": "Echo one word",
+            "parameters": {
+                "type": "object",
+                "properties": {"word": {"type": "string"}},
+                "required": ["word"],
+            },
+        },
+    }]
+    msg, _usage = LLMClient().chat(
+        messages=[{"role": "user", "content": "Use the echo tool."}],
+        model="ignored",
+        tools=tools,
+    )
+
+    payload = captured["kwargs"]["json"]
+    assert payload["tools"] == tools
+    assert payload["tool_choice"] == "auto"
+    assert any(
+        message["role"] == "system" and "Tool calling compatibility mode" in message["content"]
+        for message in payload["messages"]
+    )
+    assert msg["content"] is None
+    assert msg["tool_calls"][0]["function"]["name"] == "echo_word"
+    assert json.loads(msg["tool_calls"][0]["function"]["arguments"]) == {"word": "data-science"}
+
+
+def test_prepare_demo_messages_converts_tool_history_to_text():
+    prepared = LLMClient._prepare_demo_messages(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "echo_word", "arguments": '{"word": "data-science"}'},
+                }],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "data-science"},
+        ],
+        tools=[],
+    )
+
+    assert prepared[0]["role"] == "assistant"
+    assert "Tool calls requested" in prepared[0]["content"]
+    assert "echo_word" in prepared[0]["content"]
+    assert "tool_calls" not in prepared[0]
+    assert prepared[1] == {
+        "role": "user",
+        "content": "Tool result (call_1):\ndata-science",
+    }
+
+
+def test_model_switch_surface_is_fixed_to_demo_model():
+    client = LLMClient()
+
+    assert client.default_model() == DEMO_LLM_MODEL
+    assert client.available_models() == [DEMO_LLM_MODEL]
 
 
 def test_resolve_openai_target(monkeypatch):

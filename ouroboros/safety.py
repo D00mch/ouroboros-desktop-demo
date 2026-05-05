@@ -456,6 +456,7 @@ def _parse_safety_response(text: str) -> Optional[Dict[str, Any]]:
 
 
 _REMOTE_PROVIDER_KEYS = (
+    "LLM_URL",
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -507,6 +508,12 @@ def _light_model_has_reachable_provider(light_model: str) -> bool:
     (or legacy ``OPENAI_BASE_URL``) since ``LLMClient._resolve_remote_target``
     will raise without it — an API key alone is not enough.
     """
+    try:
+        from ouroboros.demo_llm import resolve_llm_url
+        if resolve_llm_url():
+            return True
+    except Exception:
+        pass
     try:
         from ouroboros.pricing import infer_api_key_type
         key_type = infer_api_key_type(light_model)

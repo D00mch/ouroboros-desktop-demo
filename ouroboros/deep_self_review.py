@@ -200,6 +200,9 @@ def is_review_available() -> Tuple[bool, Optional[str]]:
 
     Returns (available, model_id).
     """
+    from ouroboros.demo_llm import DEMO_LLM_MODEL, resolve_llm_url
+    if resolve_llm_url():
+        return True, DEMO_LLM_MODEL
     if os.environ.get("OPENROUTER_API_KEY"):
         return True, "openai/gpt-5.5-pro"
     if os.environ.get("OPENAI_API_KEY") and not os.environ.get("OPENAI_BASE_URL"):
@@ -278,7 +281,7 @@ def run_deep_self_review(
         if not model:
             available, model = is_review_available()
             if not available:
-                return "❌ Deep self-review unavailable: no OPENROUTER_API_KEY or OPENAI_API_KEY configured.", {}
+                return "❌ Deep self-review unavailable: no LLM_URL configured.", {}
 
         emit_progress(f"Sending to {model} (~{estimated_tokens:,} tokens). This may take several minutes...")
 

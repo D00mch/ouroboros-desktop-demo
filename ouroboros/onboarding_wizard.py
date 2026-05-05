@@ -7,6 +7,7 @@ import pathlib
 from typing import Any, Dict, Tuple
 
 from ouroboros.config import SETTINGS_DEFAULTS, VALID_RUNTIME_MODES, normalize_runtime_mode
+from ouroboros.demo_llm import DEFAULT_LLM_URL, DEMO_LLM_MODEL
 from ouroboros.provider_models import (
     ANTHROPIC_DIRECT_DEFAULTS,
     CLOUDRU_DIRECT_DEFAULTS,
@@ -27,7 +28,7 @@ _OPENROUTER_MODEL_DEFAULTS = {
 _OPENAI_MODEL_DEFAULTS = dict(OPENAI_DIRECT_DEFAULTS)
 _CLOUDRU_MODEL_DEFAULTS = dict(CLOUDRU_DIRECT_DEFAULTS)
 _ANTHROPIC_MODEL_DEFAULTS = dict(ANTHROPIC_DIRECT_DEFAULTS)
-_STEP_ORDER = ["providers", "models", "review_mode", "budget", "summary"]
+_STEP_ORDER = ["review_mode", "budget", "summary"]
 _LOCAL_PRESETS: Dict[str, Dict[str, Any]] = {
     "qwen25-7b": {
         "label": "Qwen2.5-7B Instruct Q3_K_M",
@@ -120,24 +121,8 @@ def _detect_local_preset(settings: dict) -> str:
 
 
 def _derive_provider_profile(settings: dict) -> str:
-    has_openrouter = bool(_string(settings.get("OPENROUTER_API_KEY")))
-    has_openai = bool(_string(settings.get("OPENAI_API_KEY")))
-    has_anthropic = bool(_string(settings.get("ANTHROPIC_API_KEY")))
-    has_cloudru = bool(_string(settings.get("CLOUDRU_FOUNDATION_MODELS_API_KEY")))
-    has_local = bool(_string(settings.get("LOCAL_MODEL_SOURCE")))
-    if has_openrouter:
-        return "openrouter"
-    if sum([has_openai, has_anthropic, has_cloudru]) > 1:
-        return "direct-multi"
-    if has_openai:
-        return "openai"
-    if has_anthropic:
-        return "anthropic"
-    if has_cloudru:
-        return "cloudru"
-    if has_local:
-        return "local"
-    return "openrouter"
+    del settings
+    return "demo"
 
 
 def _derive_local_routing_mode(settings: dict) -> str:
@@ -153,18 +138,12 @@ def _derive_local_routing_mode(settings: dict) -> str:
 
 
 def _initial_models(settings: dict, provider_profile: str) -> dict:
-    defaults = _OPENROUTER_MODEL_DEFAULTS
-    if provider_profile == "openai":
-        defaults = _OPENAI_MODEL_DEFAULTS
-    elif provider_profile == "cloudru":
-        defaults = _CLOUDRU_MODEL_DEFAULTS
-    elif provider_profile == "anthropic":
-        defaults = _ANTHROPIC_MODEL_DEFAULTS
+    del settings, provider_profile
     return {
-        "main": _string(settings.get("OUROBOROS_MODEL")) or defaults["main"],
-        "code": _string(settings.get("OUROBOROS_MODEL_CODE")) or defaults["code"],
-        "light": _string(settings.get("OUROBOROS_MODEL_LIGHT")) or defaults["light"],
-        "fallback": _string(settings.get("OUROBOROS_MODEL_FALLBACK")) or defaults["fallback"],
+        "main": DEMO_LLM_MODEL,
+        "code": DEMO_LLM_MODEL,
+        "light": DEMO_LLM_MODEL,
+        "fallback": DEMO_LLM_MODEL,
     }
 
 
@@ -189,6 +168,12 @@ def _build_bootstrap(settings: dict, host_mode: str) -> dict:
         "supportsLocalRuntimeControls": host_mode == "web",
         "stepOrder": list(_STEP_ORDER),
         "modelDefaults": {
+            "demo": {
+                "main": DEMO_LLM_MODEL,
+                "code": DEMO_LLM_MODEL,
+                "light": DEMO_LLM_MODEL,
+                "fallback": DEMO_LLM_MODEL,
+            },
             "openrouter": dict(_OPENROUTER_MODEL_DEFAULTS),
             "openai": dict(_OPENAI_MODEL_DEFAULTS),
             "cloudru": dict(_CLOUDRU_MODEL_DEFAULTS),
@@ -199,6 +184,7 @@ def _build_bootstrap(settings: dict, host_mode: str) -> dict:
         "modelSuggestions": list(_MODEL_SUGGESTIONS),
         "initialState": {
             "providerProfile": provider_profile,
+            "llmUrl": _string(settings.get("LLM_URL")) or DEFAULT_LLM_URL,
             "openrouterKey": _string(settings.get("OPENROUTER_API_KEY")),
             "openaiKey": _string(settings.get("OPENAI_API_KEY")),
             "cloudruKey": _string(settings.get("CLOUDRU_FOUNDATION_MODELS_API_KEY")),
@@ -252,10 +238,10 @@ def build_onboarding_html(settings: dict, host_mode: str = "desktop") -> str:
 
 
 def prepare_onboarding_settings(data: dict, current_settings: dict) -> Tuple[dict, str | None]:
-    openrouter_key = _string(data.get("OPENROUTER_API_KEY"))
-    openai_key = _string(data.get("OPENAI_API_KEY"))
-    cloudru_key = _string(data.get("CLOUDRU_FOUNDATION_MODELS_API_KEY"))
-    anthropic_key = _string(data.get("ANTHROPIC_API_KEY"))
+    openrouter_key = ""
+    openai_key = ""
+    cloudru_key = ""
+    anthropic_key = ""
     local_source = _string(data.get("LOCAL_MODEL_SOURCE"))
     local_filename = _string(data.get("LOCAL_MODEL_FILENAME"))
     local_chat_format = _string(data.get("LOCAL_MODEL_CHAT_FORMAT"))
@@ -278,19 +264,7 @@ def prepare_onboarding_settings(data: dict, current_settings: dict) -> Tuple[dic
     )
     skills_repo_path = _string(data.get("OUROBOROS_SKILLS_REPO_PATH"))
 
-    if openrouter_key and len(openrouter_key) < 10:
-        return {}, "OpenRouter API key looks too short."
-    if openai_key and len(openai_key) < 10:
-        return {}, "OpenAI API key looks too short."
-    if cloudru_key and len(cloudru_key) < 10:
-        return {}, "Cloud.ru Foundation Models API key looks too short."
-    if anthropic_key and len(anthropic_key) < 10:
-        return {}, "Anthropic API key looks too short."
-
     has_local = bool(local_source)
-    if not openrouter_key and not openai_key and not cloudru_key and not anthropic_key and not has_local:
-        return {}, "Configure OpenRouter, OpenAI, Cloud.ru, Anthropic, or a local model before continuing."
-
     if has_local and "/" in local_source and not local_source.startswith(("/", "~")) and not local_filename:
         return {}, "Local HuggingFace sources need a GGUF filename."
 
@@ -308,13 +282,14 @@ def prepare_onboarding_settings(data: dict, current_settings: dict) -> Tuple[dic
         )
 
     models = {
-        "OUROBOROS_MODEL": _string(data.get("OUROBOROS_MODEL")),
-        "OUROBOROS_MODEL_CODE": _string(data.get("OUROBOROS_MODEL_CODE")),
-        "OUROBOROS_MODEL_LIGHT": _string(data.get("OUROBOROS_MODEL_LIGHT")),
-        "OUROBOROS_MODEL_FALLBACK": _string(data.get("OUROBOROS_MODEL_FALLBACK")),
+        "OUROBOROS_MODEL": DEMO_LLM_MODEL,
+        "OUROBOROS_MODEL_CODE": DEMO_LLM_MODEL,
+        "OUROBOROS_MODEL_LIGHT": DEMO_LLM_MODEL,
+        "OUROBOROS_MODEL_FALLBACK": DEMO_LLM_MODEL,
+        "OUROBOROS_WEBSEARCH_MODEL": DEMO_LLM_MODEL,
+        "OUROBOROS_REVIEW_MODELS": DEMO_LLM_MODEL,
+        "OUROBOROS_SCOPE_REVIEW_MODEL": DEMO_LLM_MODEL,
     }
-    if not all(models.values()):
-        return {}, "Confirm all four models before starting Ouroboros."
 
     try:
         total_budget = float(data.get("TOTAL_BUDGET") or SETTINGS_DEFAULTS["TOTAL_BUDGET"])
@@ -353,16 +328,16 @@ def prepare_onboarding_settings(data: dict, current_settings: dict) -> Tuple[dic
     }.get(local_routing_mode, (False, False, False, False))
     if not has_local:
         use_local = (False, False, False, False)
-    if has_local and not openrouter_key and not openai_key and not cloudru_key and not anthropic_key and not any(use_local):
-        return {}, "Local-only setups must route at least one model to the local runtime."
 
     prepared = dict(current_settings)
     prepared.update(_WIZARD_HIDDEN_PROVIDER_DEFAULTS)
     prepared.update(models)
     prepared.update(
         {
+            "LLM_URL": _string(current_settings.get("LLM_URL")) or DEFAULT_LLM_URL,
             "OPENROUTER_API_KEY": openrouter_key,
             "OPENAI_API_KEY": openai_key,
+            "OPENAI_COMPATIBLE_API_KEY": "",
             "CLOUDRU_FOUNDATION_MODELS_API_KEY": cloudru_key,
             "ANTHROPIC_API_KEY": anthropic_key,
             "TOTAL_BUDGET": total_budget,

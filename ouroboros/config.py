@@ -14,6 +14,7 @@ import sys
 import time
 from typing import Optional
 
+from ouroboros.demo_llm import DEFAULT_LLM_URL, DEMO_LLM_MODEL
 from ouroboros.platform_layer import pid_lock_acquire as _compat_pid_lock_acquire
 from ouroboros.platform_layer import pid_lock_release as _compat_pid_lock_release
 from ouroboros.provider_models import migrate_model_value
@@ -39,6 +40,7 @@ AGENT_SERVER_PORT = 8765
 # Settings defaults
 # ---------------------------------------------------------------------------
 SETTINGS_DEFAULTS = {
+    "LLM_URL": DEFAULT_LLM_URL,
     "OPENROUTER_API_KEY": "",
     "OPENAI_API_KEY": "",
     "OPENAI_BASE_URL": "",
@@ -60,10 +62,10 @@ SETTINGS_DEFAULTS = {
     "DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS": True,
 
     "OUROBOROS_NETWORK_PASSWORD": "",
-    "OUROBOROS_MODEL": "anthropic/claude-opus-4.7",
-    "OUROBOROS_MODEL_CODE": "anthropic/claude-opus-4.7",
-    "OUROBOROS_MODEL_LIGHT": "anthropic/claude-sonnet-4.6",
-    "OUROBOROS_MODEL_FALLBACK": "anthropic/claude-sonnet-4.6",
+    "OUROBOROS_MODEL": DEMO_LLM_MODEL,
+    "OUROBOROS_MODEL_CODE": DEMO_LLM_MODEL,
+    "OUROBOROS_MODEL_LIGHT": DEMO_LLM_MODEL,
+    "OUROBOROS_MODEL_FALLBACK": DEMO_LLM_MODEL,
     "CLAUDE_CODE_MODEL": "claude-opus-4-7[1m]",
     "OUROBOROS_MAX_WORKERS": 5,
     "TOTAL_BUDGET": 10.0,
@@ -75,9 +77,9 @@ SETTINGS_DEFAULTS = {
     "OUROBOROS_BG_WAKEUP_MIN": 30,
     "OUROBOROS_BG_WAKEUP_MAX": 7200,
     "OUROBOROS_EVO_COST_THRESHOLD": 0.10,
-    "OUROBOROS_WEBSEARCH_MODEL": "gpt-5.2",
+    "OUROBOROS_WEBSEARCH_MODEL": DEMO_LLM_MODEL,
     # Pre-commit review: comma-separated provider-tagged model list
-    "OUROBOROS_REVIEW_MODELS": "openai/gpt-5.5,google/gemini-3.1-pro-preview,anthropic/claude-opus-4.7",
+    "OUROBOROS_REVIEW_MODELS": DEMO_LLM_MODEL,
     # Pre-commit review enforcement: advisory | blocking
     "OUROBOROS_REVIEW_ENFORCEMENT": "advisory",
     # Runtime mode: light | advanced | pro.
@@ -93,7 +95,7 @@ SETTINGS_DEFAULTS = {
     "OUROBOROS_SKILLS_REPO_PATH": "",
     "OUROBOROS_CLAWHUB_REGISTRY_URL": "https://clawhub.ai/api/v1",
     # Scope review: single-model blocking reviewer (runs after triad review)
-    "OUROBOROS_SCOPE_REVIEW_MODEL": "openai/gpt-5.5",
+    "OUROBOROS_SCOPE_REVIEW_MODEL": DEMO_LLM_MODEL,
     # Reasoning effort per task type: none | low | medium | high
     # OUROBOROS_INITIAL_REASONING_EFFORT remains a legacy alias for task/chat.
     "OUROBOROS_EFFORT_TASK": "medium",
@@ -127,6 +129,22 @@ SETTINGS_DEFAULTS = {
 
 _VALID_EFFORTS = ("none", "low", "medium", "high")
 _DIRECT_PROVIDER_REVIEW_RUNS = 3
+_DEMO_LLM_MODEL_KEYS = (
+    "OUROBOROS_MODEL",
+    "OUROBOROS_MODEL_CODE",
+    "OUROBOROS_MODEL_LIGHT",
+    "OUROBOROS_MODEL_FALLBACK",
+    "OUROBOROS_WEBSEARCH_MODEL",
+    "OUROBOROS_REVIEW_MODELS",
+    "OUROBOROS_SCOPE_REVIEW_MODEL",
+)
+_DEMO_IGNORED_PROVIDER_KEYS = (
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_COMPATIBLE_API_KEY",
+    "CLOUDRU_FOUNDATION_MODELS_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
 
 # Phase 2 three-layer refactor runtime mode. Separate axis from
 # ``OUROBOROS_REVIEW_ENFORCEMENT`` — review strictness and self-modification
@@ -645,6 +663,11 @@ def load_settings() -> dict:
             if key in loaded and settings.get(key) not in {None, ""}:
                 continue
             settings[key] = _coerce_setting_value(key, raw_env)
+        settings["LLM_URL"] = str(os.environ.get("LLM_URL", "") or settings.get("LLM_URL") or DEFAULT_LLM_URL)
+        for key in _DEMO_LLM_MODEL_KEYS:
+            settings[key] = DEMO_LLM_MODEL
+        for key in _DEMO_IGNORED_PROVIDER_KEYS:
+            settings[key] = ""
         return settings
     finally:
         _release_settings_lock(fd)
@@ -752,7 +775,14 @@ def save_settings(settings: dict, *, allow_elevation: bool = False) -> None:
 
 def apply_settings_to_env(settings: dict) -> None:
     """Push settings into environment variables for supervisor modules."""
+    settings = dict(settings)
+    settings["LLM_URL"] = str(os.environ.get("LLM_URL", "") or settings.get("LLM_URL") or DEFAULT_LLM_URL)
+    for key in _DEMO_LLM_MODEL_KEYS:
+        settings[key] = DEMO_LLM_MODEL
+    for key in _DEMO_IGNORED_PROVIDER_KEYS:
+        settings[key] = ""
     env_keys = [
+        "LLM_URL",
         "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
         "OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL",
         "CLOUDRU_FOUNDATION_MODELS_API_KEY", "CLOUDRU_FOUNDATION_MODELS_BASE_URL",

@@ -3,6 +3,7 @@ import pathlib
 import pytest
 
 from ouroboros.onboarding_wizard import build_onboarding_html, prepare_onboarding_settings
+from ouroboros.demo_llm import DEFAULT_LLM_URL, DEMO_LLM_MODEL
 
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -29,11 +30,15 @@ def _base_payload() -> dict:
     }
 
 
-def test_prepare_onboarding_settings_requires_runnable_config():
+def test_prepare_onboarding_settings_accepts_demo_without_keys():
     prepared, error = prepare_onboarding_settings(_base_payload(), {})
 
-    assert prepared == {}
-    assert "Configure OpenRouter, OpenAI, Cloud.ru, Anthropic, or a local model" in error
+    assert error is None
+    assert prepared["LLM_URL"] == DEFAULT_LLM_URL
+    assert prepared["OPENROUTER_API_KEY"] == ""
+    assert prepared["OPENAI_API_KEY"] == ""
+    assert prepared["ANTHROPIC_API_KEY"] == ""
+    assert prepared["OUROBOROS_MODEL"] == DEMO_LLM_MODEL
 
 
 def test_prepare_onboarding_settings_accepts_openai_only_setup():
@@ -43,8 +48,8 @@ def test_prepare_onboarding_settings_accepts_openai_only_setup():
     prepared, error = prepare_onboarding_settings(payload, {})
 
     assert error is None
-    assert prepared["OPENAI_API_KEY"] == "sk-openai-1234567890"
-    assert prepared["OUROBOROS_MODEL"] == "openai::gpt-5.5"
+    assert prepared["OPENAI_API_KEY"] == ""
+    assert prepared["OUROBOROS_MODEL"] == DEMO_LLM_MODEL
     assert prepared["TOTAL_BUDGET"] == 10.0
     assert prepared["OUROBOROS_PER_TASK_COST_USD"] == 20.0
     assert prepared["OUROBOROS_REVIEW_ENFORCEMENT"] == "advisory"
@@ -61,8 +66,8 @@ def test_prepare_onboarding_settings_accepts_cloudru_only_setup():
     prepared, error = prepare_onboarding_settings(payload, {})
 
     assert error is None
-    assert prepared["CLOUDRU_FOUNDATION_MODELS_API_KEY"] == "cloudru-key-1234567890"
-    assert prepared["OUROBOROS_MODEL"] == "cloudru::zai-org/GLM-4.7"
+    assert prepared["CLOUDRU_FOUNDATION_MODELS_API_KEY"] == ""
+    assert prepared["OUROBOROS_MODEL"] == DEMO_LLM_MODEL
 
 
 def test_prepare_onboarding_settings_accepts_anthropic_only_setup():
@@ -76,11 +81,11 @@ def test_prepare_onboarding_settings_accepts_anthropic_only_setup():
     prepared, error = prepare_onboarding_settings(payload, {})
 
     assert error is None
-    assert prepared["ANTHROPIC_API_KEY"] == "sk-ant-1234567890"
-    assert prepared["OUROBOROS_MODEL"] == "anthropic::claude-opus-4-6"
+    assert prepared["ANTHROPIC_API_KEY"] == ""
+    assert prepared["OUROBOROS_MODEL"] == DEMO_LLM_MODEL
 
 
-def test_prepare_onboarding_settings_rejects_local_only_cloud_routing():
+def test_prepare_onboarding_settings_accepts_local_only_cloud_routing_in_demo():
     payload = _base_payload()
     payload["LOCAL_MODEL_SOURCE"] = "Qwen/Qwen2.5-7B-Instruct-GGUF"
     payload["LOCAL_MODEL_FILENAME"] = "qwen2.5-7b-instruct-q3_k_m.gguf"
@@ -88,8 +93,9 @@ def test_prepare_onboarding_settings_rejects_local_only_cloud_routing():
 
     prepared, error = prepare_onboarding_settings(payload, {})
 
-    assert prepared == {}
-    assert error == "Local-only setups must route at least one model to the local runtime."
+    assert error is None
+    assert prepared["USE_LOCAL_MAIN"] is False
+    assert prepared["USE_LOCAL_FALLBACK"] is False
 
 
 def test_prepare_onboarding_settings_sets_all_local_routes():
@@ -107,12 +113,9 @@ def test_prepare_onboarding_settings_sets_all_local_routes():
     assert prepared["USE_LOCAL_FALLBACK"] is True
 
 
-def test_prepare_onboarding_settings_preserves_user_visible_provider_fields():
-    """The wizard only edits fields it actually exposes. Settings fields
-    that live in ``settings_ui.js`` but not in the wizard (``OPENAI_BASE_URL``,
-    ``OPENAI_COMPATIBLE_*``, ``CLOUDRU_FOUNDATION_MODELS_BASE_URL``) must
-    survive re-running onboarding so a user who edited them in Settings
-    does not silently lose the value."""
+def test_prepare_onboarding_settings_preserves_non_secret_provider_fields():
+    """The demo wizard clears provider keys but leaves non-secret legacy
+    endpoint fields alone so old settings files round-trip cleanly."""
     payload = _base_payload()
     payload["OPENAI_API_KEY"] = "sk-openai-1234567890"
     current = {
@@ -126,7 +129,7 @@ def test_prepare_onboarding_settings_preserves_user_visible_provider_fields():
 
     assert error is None
     assert prepared["OPENAI_BASE_URL"] == "https://legacy.example/v1"
-    assert prepared["OPENAI_COMPATIBLE_API_KEY"] == "compat-secret"
+    assert prepared["OPENAI_COMPATIBLE_API_KEY"] == ""
     assert prepared["OPENAI_COMPATIBLE_BASE_URL"] == "https://compat.example/v1"
     assert prepared["CLOUDRU_FOUNDATION_MODELS_BASE_URL"] == "https://cloud.example/v1"
 
@@ -134,17 +137,13 @@ def test_prepare_onboarding_settings_preserves_user_visible_provider_fields():
 def test_build_onboarding_html_contains_multistep_markers():
     html = build_onboarding_html({})
 
-    assert "bootstrap.stepOrder || ['providers', 'models', 'review_mode', 'budget', 'summary']" in html
+    assert '"stepOrder": ["review_mode", "budget", "summary"]' in html
+    assert "Demo onboarding uses the server-side LLM_URL endpoint" in html
     assert "Add your access" in html
-    assert "Keys + local" in html
     assert "Choose models" in html
-    assert "4 model slots" in html
     assert "Choose review mode" in html
     assert "Set your budget" in html
-    assert "Local model settings" in html
-    assert "openai::gpt-5.5" in html
-    assert "openai::gpt-5.5-mini" in html
-    assert "anthropic::claude-sonnet-4-6" in html
+    assert DEMO_LLM_MODEL in html
     assert "OPENAI_BASE_URL: ''" not in html
     assert "OPENAI_COMPATIBLE_API_KEY: ''" not in html
     assert "OPENAI_COMPATIBLE_BASE_URL: ''" not in html
@@ -168,10 +167,10 @@ def test_build_onboarding_html_adapts_to_multi_provider_access():
     assert "function profileLabel(profile)" in html
     assert "function nextButtonShouldBeDisabled()" in html
     assert "function syncCurrentStepActionState()" in html
-    assert "return 'direct-multi';" in html
-    assert "OPENROUTER_API_KEY: trim(state.openrouterKey)" in html
-    assert "OPENAI_API_KEY: trim(state.openaiKey)" in html
-    assert "ANTHROPIC_API_KEY: trim(state.anthropicKey)" in html
+    assert "return 'demo';" in html
+    assert "OPENROUTER_API_KEY: ''" in html
+    assert "OPENAI_API_KEY: ''" in html
+    assert "ANTHROPIC_API_KEY: ''" in html
     assert "LOCAL_ROUTING_MODE: trim(state.localSource) ? (trim(state.localRoutingMode) || 'cloud') : 'cloud'" in html
 
 
