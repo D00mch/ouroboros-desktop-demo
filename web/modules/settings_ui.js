@@ -356,6 +356,57 @@ export function renderSettingsPage() {
                     </div>
 
                     <div class="form-section">
+                        <h3>SberChat</h3>
+                        <div class="settings-section-copy">Dialogs gRPC bridge for SberChat bot delivery. Changes require restart.</div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>gRPC Endpoint</label>
+                                <input id="s-dialogs-endpoint" placeholder="https://ep.sberchat.sberbank.ru:443">
+                            </div>
+                            ${secretField({
+                                id: 's-dialogs-bot-token',
+                                settingKey: 'DIALOGS_BOT_TOKEN',
+                                label: 'Bot Token',
+                                placeholder: 'Dialogs bot token',
+                            })}
+                        </div>
+                        <div class="form-grid two">
+                            <div class="form-field">
+                                <label>App ID</label>
+                                <input id="s-dialogs-app-id" type="number" value="0">
+                            </div>
+                            <div class="form-field">
+                                <label>Trust Server Certificate</label>
+                                <label class="local-toggle"><input type="checkbox" id="s-dialogs-trust-certs"> Pin fetched certificate</label>
+                            </div>
+                        </div>
+                        <div class="form-grid two">
+                            <div class="form-field">
+                                <label>App Title</label>
+                                <input id="s-dialogs-app-title" placeholder="Ouroboros">
+                            </div>
+                            <div class="form-field">
+                                <label>Device Title</label>
+                                <input id="s-dialogs-device-title" placeholder="Ouroboros">
+                            </div>
+                        </div>
+                        <div class="form-grid three">
+                            <div class="form-field">
+                                <label>Keepalive Time (ms)</label>
+                                <input id="s-dialogs-keepalive-time" type="number" value="30000">
+                            </div>
+                            <div class="form-field">
+                                <label>Keepalive Timeout (ms)</label>
+                                <input id="s-dialogs-keepalive-timeout" type="number" value="10000">
+                            </div>
+                            <div class="form-field">
+                                <label>Keepalive Without Calls</label>
+                                <label class="local-toggle"><input type="checkbox" id="s-dialogs-keepalive-permit"> Enable</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
                         <h3>GitHub</h3>
                         <div class="form-row">${secretField({
                             id: 's-gh-token',

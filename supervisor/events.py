@@ -161,8 +161,12 @@ def _handle_task_heartbeat(evt: Dict[str, Any], ctx: Any) -> None:
 
 def _handle_typing_start(evt: Dict[str, Any], ctx: Any) -> None:
     try:
-        chat_id = int(evt.get("chat_id") or 0)
-        if chat_id:
+        chat_id = evt.get("chat_id")
+        if chat_id not in (None, ""):
+            send_typing = getattr(ctx, "send_typing", None)
+            if callable(send_typing):
+                send_typing(chat_id)
+                return
             ctx.bridge.send_chat_action(chat_id, "typing")
     except Exception:
         log.debug("Failed to send typing action to chat", exc_info=True)
@@ -175,13 +179,29 @@ def _handle_send_message(evt: Dict[str, Any], ctx: Any) -> None:
         fmt = str(evt.get("format") or "")
         is_progress = bool(evt.get("is_progress"))
         raw_ts = evt.get("ts")
+        task_id = str(evt.get("task_id") or "")
+        if task_id:
+            if is_progress:
+                clear_loading = getattr(ctx, "clear_dialogs_loading_phrase", None)
+                if callable(clear_loading):
+                    try:
+                        clear_loading(task_id)
+                    except Exception:
+                        log.debug("Failed to clear dialogs loading phrase", exc_info=True)
+            else:
+                clear_reply_token = getattr(ctx, "clear_dialogs_reply_token", None)
+                if callable(clear_reply_token):
+                    try:
+                        clear_reply_token(task_id)
+                    except Exception:
+                        log.debug("Failed to clear dialogs reply token", exc_info=True)
         ctx.send_with_budget(
-            int(evt["chat_id"]),
+            evt.get("chat_id"),
             str(evt.get("text") or ""),
             log_text=(str(log_text) if isinstance(log_text, str) else None),
             fmt=fmt,
             is_progress=is_progress,
-            task_id=str(evt.get("task_id") or ""),
+            task_id=task_id,
             ts=(str(raw_ts) if raw_ts else None),
         )
     except Exception as e:
@@ -327,7 +347,7 @@ def _handle_promote_to_stable(evt: Dict[str, Any], ctx: Any) -> None:
     except Exception as e:
         st = ctx.load_state()
         if st.get("owner_chat_id"):
-            ctx.send_with_budget(int(st["owner_chat_id"]), f"❌ Failed to promote to stable: {e}")
+            ctx.send_with_budget(st["owner_chat_id"], f"❌ Failed to promote to stable: {e}")
         return
 
     # Optional remote push (silently skip if no remote configured)
@@ -346,7 +366,7 @@ def _handle_promote_to_stable(evt: Dict[str, Any], ctx: Any) -> None:
     st = ctx.load_state()
     if st.get("owner_chat_id"):
         ctx.send_with_budget(
-            int(st["owner_chat_id"]),
+            st["owner_chat_id"],
             f"✅ Promoted: {ctx.BRANCH_DEV} → {ctx.BRANCH_STABLE} ({new_sha[:8]}){remote_status}",
         )
 
@@ -442,7 +462,7 @@ def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
     if depth > 3:
         log.warning("Rejected task due to depth limit: depth=%d, desc=%s", depth, desc[:100])
         if owner_chat_id:
-            ctx.send_with_budget(int(owner_chat_id), f"⚠️ Task rejected: subtask depth limit (3) exceeded")
+            ctx.send_with_budget(owner_chat_id, "⚠️ Task rejected: subtask depth limit (3) exceeded")
         return
 
     if owner_chat_id and desc:
@@ -465,7 +485,7 @@ def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
                 )
             except Exception:
                 log.warning("Failed to persist rejected duplicate task status for %s", tid, exc_info=True)
-            ctx.send_with_budget(int(owner_chat_id), f"⚠️ Task rejected: semantically similar to already active task {dup_id}")
+            ctx.send_with_budget(owner_chat_id, f"⚠️ Task rejected: semantically similar to already active task {dup_id}")
             return
 
         text = desc
@@ -474,7 +494,7 @@ def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
         task = {
             "id": tid,
             "type": "task",
-            "chat_id": int(owner_chat_id),
+            "chat_id": owner_chat_id,
             "text": text,
             "description": desc,
             "context": task_context,
@@ -495,7 +515,7 @@ def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
             )
         except Exception:
             log.warning("Failed to persist scheduled task status for %s", tid, exc_info=True)
-        ctx.send_with_budget(int(owner_chat_id), f"🗓️ Scheduled task {tid}: {desc}")
+        ctx.send_with_budget(owner_chat_id, f"🗓️ Scheduled task {tid}: {desc}")
         ctx.persist_queue_snapshot(reason="schedule_task_event")
 
 
@@ -506,7 +526,7 @@ def _handle_cancel_task(evt: Dict[str, Any], ctx: Any) -> None:
     ok = ctx.cancel_task_by_id(task_id) if task_id else False
     if owner_chat_id:
         ctx.send_with_budget(
-            int(owner_chat_id),
+            owner_chat_id,
             f"{'✅' if ok else '❌'} cancel {task_id or '?'} (event)",
         )
 
@@ -523,7 +543,7 @@ def _handle_toggle_evolution(evt: Dict[str, Any], ctx: Any) -> None:
         ctx.persist_queue_snapshot(reason="evolve_off_via_tool")
     if st.get("owner_chat_id"):
         state_str = "ON" if enabled else "OFF"
-        ctx.send_with_budget(int(st["owner_chat_id"]), f"🧬 Evolution: {state_str} (via agent tool)")
+        ctx.send_with_budget(st["owner_chat_id"], f"🧬 Evolution: {state_str} (via agent tool)")
 
 
 def _handle_toggle_consciousness(evt: Dict[str, Any], ctx: Any) -> None:
@@ -541,21 +561,26 @@ def _handle_toggle_consciousness(evt: Dict[str, Any], ctx: Any) -> None:
         result = f"Background consciousness: {status}"
     st = ctx.load_state()
     if st.get("owner_chat_id"):
-        ctx.send_with_budget(int(st["owner_chat_id"]), f"🧠 {result}")
+        ctx.send_with_budget(st["owner_chat_id"], f"🧠 {result}")
 
 
 def _handle_send_photo(evt: Dict[str, Any], ctx: Any) -> None:
     """Send a photo to the owner's chat."""
     import base64 as b64mod
     try:
-        chat_id = int(evt.get("chat_id") or 0)
+        chat_id = evt.get("chat_id")
         image_b64 = str(evt.get("image_base64") or "")
         caption = str(evt.get("caption") or "")
         mime = str(evt.get("mime") or "image/png")
-        if not chat_id or not image_b64:
+        if chat_id in (None, "") or not image_b64:
             return
         photo_bytes = b64mod.b64decode(image_b64)
-        ok, err = ctx.bridge.send_photo(chat_id, photo_bytes, caption=caption, mime=mime)
+        send_photo = getattr(ctx, "send_photo", None)
+        if callable(send_photo):
+            result = send_photo(chat_id, photo_bytes, caption=caption, mime=mime)
+        else:
+            result = ctx.bridge.send_photo(chat_id, photo_bytes, caption=caption, mime=mime)
+        ok, err = result if isinstance(result, tuple) else (True, "ok")
         if not ok:
             ctx.append_jsonl(
                 ctx.DRIVE_ROOT / "logs" / "supervisor.jsonl",

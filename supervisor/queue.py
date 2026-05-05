@@ -33,6 +33,7 @@ SOFT_TIMEOUT_SEC: int = 600
 HARD_TIMEOUT_SEC: int = 1800
 HEARTBEAT_STALE_SEC: int = 120
 QUEUE_MAX_RETRIES: int = 1
+_TASK_TERMINAL_HOOK: Any = None
 
 
 def init(drive_root: pathlib.Path, soft_timeout: int, hard_timeout: int) -> None:
@@ -61,6 +62,11 @@ def refresh_timeouts_from_settings(settings: dict) -> None:
             HARD_TIMEOUT_SEC = int(hard_raw)
         except (TypeError, ValueError):
             pass
+
+
+def set_task_terminal_hook(hook: Any) -> None:
+    global _TASK_TERMINAL_HOOK
+    _TASK_TERMINAL_HOOK = hook
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +276,13 @@ def cancel_task_by_id(task_id: str) -> bool:
 
         for w in workers.WORKERS.values():
             if w.busy_task_id == task_id:
-                RUNNING.pop(task_id, None)
+                meta = RUNNING.pop(task_id, None) or {}
+                task = meta.get("task") if isinstance(meta, dict) else {}
+                if callable(_TASK_TERMINAL_HOOK):
+                    try:
+                        _TASK_TERMINAL_HOOK(task_id, task.get("chat_id") if isinstance(task, dict) else None)
+                    except Exception:
+                        log.debug("Suppressed task terminal hook failure", exc_info=True)
                 try:
                     from ouroboros.task_results import STATUS_CANCELLED, write_task_result
                     write_task_result(
@@ -305,7 +317,7 @@ def enforce_task_timeouts() -> None:
         return
     now = time.time()
     st = load_state()
-    owner_chat_id = int(st.get("owner_chat_id") or 0)
+    owner_chat_id = st.get("owner_chat_id")
 
     for task_id, meta in list(RUNNING.items()):
         if not isinstance(meta, dict):
@@ -343,6 +355,11 @@ def enforce_task_timeouts() -> None:
             continue
 
         RUNNING.pop(task_id, None)
+        if callable(_TASK_TERMINAL_HOOK):
+            try:
+                _TASK_TERMINAL_HOOK(task_id, task.get("chat_id") if isinstance(task, dict) else None)
+            except Exception:
+                log.debug("Suppressed task terminal hook failure", exc_info=True)
         if worker_id in workers.WORKERS and workers.WORKERS[worker_id].busy_task_id == task_id:
             workers.WORKERS[worker_id].busy_task_id = None
 
@@ -431,12 +448,12 @@ def queue_deep_self_review_task(reason: str, model: str = "", force: bool = Fals
     enqueue_task({
         "id": tid,
         "type": "deep_self_review",
-        "chat_id": int(owner_chat_id),
+        "chat_id": owner_chat_id,
         "text": reason or "Deep self-review",
         "model": model,
     })
     persist_queue_snapshot(reason="deep_self_review_enqueued")
-    send_with_budget(int(owner_chat_id), f"🔎 Deep self-review queued: {tid} ({reason})")
+    send_with_budget(owner_chat_id, f"🔎 Deep self-review queued: {tid} ({reason})")
     return tid
 
 
@@ -444,7 +461,7 @@ def get_evolution_status_snapshot() -> Dict[str, Any]:
     """Return a non-mutating snapshot of evolution scheduling state."""
     st = load_state()
     enabled = bool(st.get("evolution_mode_enabled"))
-    owner_chat_id = int(st.get("owner_chat_id") or 0)
+    owner_chat_id = st.get("owner_chat_id")
     consecutive_failures = int(st.get("evolution_consecutive_failures") or 0)
     remaining = round(float(budget_remaining(st)), 2)
     queued_task = next((t for t in PENDING if str(t.get("type") or "") == "evolution"), None)
@@ -533,7 +550,7 @@ def enqueue_evolution_task_if_needed() -> None:
         st["evolution_mode_enabled"] = False
         save_state(st)
         send_with_budget(
-            int(owner_chat_id),
+            owner_chat_id,
             f"🧬⚠️ Evolution paused: {consecutive_failures} consecutive failures. "
             f"Use /evolve start to resume after investigating the issue."
         )
@@ -543,16 +560,16 @@ def enqueue_evolution_task_if_needed() -> None:
     if remaining < EVOLUTION_BUDGET_RESERVE:
         st["evolution_mode_enabled"] = False
         save_state(st)
-        send_with_budget(int(owner_chat_id), f"💸 Evolution stopped: ${remaining:.2f} remaining (reserve ${EVOLUTION_BUDGET_RESERVE:.0f} for conversations).")
+        send_with_budget(owner_chat_id, f"💸 Evolution stopped: ${remaining:.2f} remaining (reserve ${EVOLUTION_BUDGET_RESERVE:.0f} for conversations).")
         return
     cycle = int(st.get("evolution_cycle") or 0) + 1
     tid = uuid.uuid4().hex[:8]
     enqueue_task({
         "id": tid, "type": "evolution",
-        "chat_id": int(owner_chat_id),
+        "chat_id": owner_chat_id,
         "text": build_evolution_task_text(cycle),
     })
     st["evolution_cycle"] = cycle
     st["last_evolution_task_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     save_state(st)
-    send_with_budget(int(owner_chat_id), f"🧬 Evolution #{cycle}: {tid}")
+    send_with_budget(owner_chat_id, f"🧬 Evolution #{cycle}: {tid}")

@@ -147,12 +147,26 @@ def _get_chat_agent():
     return _chat_agent
 
 
-def handle_chat_direct(chat_id: int, text: str, image_data: Optional[Union[Tuple[str, str], Tuple[str, str, str]]] = None) -> None:
+def handle_chat_direct(
+    chat_id: Any,
+    text: str,
+    image_data: Optional[Union[Tuple[str, str], Tuple[str, str, str]]] = None,
+    *,
+    task_id: str = "",
+    on_terminal: Any = None,
+) -> None:
     with _chat_agent_lock:
-        _handle_chat_direct_locked(chat_id, text, image_data)
+        _handle_chat_direct_locked(chat_id, text, image_data, task_id=task_id, on_terminal=on_terminal)
 
 
-def _handle_chat_direct_locked(chat_id: int, text: str, image_data: Optional[Union[Tuple[str, str], Tuple[str, str, str]]] = None) -> None:
+def _handle_chat_direct_locked(
+    chat_id: Any,
+    text: str,
+    image_data: Optional[Union[Tuple[str, str], Tuple[str, str, str]]] = None,
+    *,
+    task_id: str = "",
+    on_terminal: Any = None,
+) -> None:
     from supervisor.state import budget_remaining, load_state
     if budget_remaining(load_state()) <= 0:
         try:
@@ -165,7 +179,7 @@ def _handle_chat_direct_locked(chat_id: int, text: str, image_data: Optional[Uni
     try:
         agent = _get_chat_agent()
         task = {
-            "id": uuid.uuid4().hex[:8],
+            "id": str(task_id or uuid.uuid4().hex[:8]),
             "type": "task",
             "chat_id": chat_id,
             "text": text,
@@ -186,6 +200,8 @@ def _handle_chat_direct_locked(chat_id: int, text: str, image_data: Optional[Uni
         events = agent.handle_task(task)
         for e in events:
             get_event_q().put(e)
+        if callable(on_terminal):
+            on_terminal(str(task["id"]), chat_id)
     except Exception as e:
         import traceback
         err_msg = f"⚠️ Error: {type(e).__name__}: {e}"
@@ -203,6 +219,11 @@ def _handle_chat_direct_locked(chat_id: int, text: str, image_data: Optional[Uni
             get_bridge().send_message(chat_id, err_msg)
         except Exception:
             log.debug("Suppressed exception", exc_info=True)
+        if callable(on_terminal):
+            terminal_task_id = ""
+            if "task" in locals() and isinstance(task, dict):
+                terminal_task_id = str(task.get("id") or "")
+            on_terminal(terminal_task_id or str(task_id or ""), chat_id)
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +314,7 @@ def auto_resume_after_restart() -> None:
             import threading
             threading.Thread(
                 target=handle_chat_direct,
-                args=(int(chat_id),
+                args=(chat_id,
                       "[auto-resume after restart] Continue your work. Read scratchpad and identity — they contain context of what you were doing.",
                       None),
                 daemon=True,
@@ -499,7 +520,7 @@ def _verify_worker_sha_after_spawn(events_offset: int, timeout_sec: float = 90.0
     )
     if not ok and st.get("owner_chat_id"):
         send_with_budget(
-            int(st["owner_chat_id"]),
+            st["owner_chat_id"],
             f"⚠️ Worker SHA mismatch after spawn: expected {expected_sha[:8]}, got {(observed_sha or 'unknown')[:8]}",
         )
 
@@ -664,7 +685,7 @@ def assign_tasks() -> None:
                     if st.get("owner_chat_id"):
                         emoji = '🧬' if task_type == 'evolution' else '🔎'
                         send_with_budget(
-                            int(st["owner_chat_id"]),
+                            st["owner_chat_id"],
                             f"{emoji} {task_type.capitalize()} task {task['id']} started.",
                         )
                 queue.persist_queue_snapshot(reason="assign_task")
@@ -746,7 +767,7 @@ def ensure_workers_healthy() -> None:
                         # Send failure message FIRST, then task_done, to avoid ordering race:
                         # if task_done arrives before the message, the UI closes the card
                         # before the explanatory text is visible.
-                        chat_id = int(task.get("chat_id") or 1)
+                        chat_id = task.get("chat_id") or 1
                         try:
                             from supervisor.message_bus import get_bridge
                             bridge = get_bridge()
@@ -819,7 +840,7 @@ def ensure_workers_healthy() -> None:
                             except Exception:
                                 log.debug("Failed to write failed status for %s", w.busy_task_id, exc_info=True)
                             # Send failure message FIRST so it arrives before the card closes
-                            chat_id = int(task.get("chat_id") or 1)
+                            chat_id = task.get("chat_id") or 1
                             try:
                                 from supervisor.message_bus import get_bridge
                                 bridge = get_bridge()
@@ -888,12 +909,10 @@ def ensure_workers_healthy() -> None:
         )
         if st.get("owner_chat_id"):
             send_with_budget(
-                int(st["owner_chat_id"]),
+                st["owner_chat_id"],
                 "⚠️ Frequent worker crashes. Multiprocessing workers disabled, "
                 "continuing in direct-chat mode (threading).",
             )
         # Kill all workers — direct chat via handle_chat_direct still works
         kill_workers()
         CRASH_TS.clear()
-
-

@@ -252,7 +252,7 @@ class ToolContext:
     drive_root: pathlib.Path
     branch_dev: str = "ouroboros"
     pending_events: List[Dict[str, Any]] = field(default_factory=list)
-    current_chat_id: Optional[int] = None
+    current_chat_id: Any = None
     current_task_type: Optional[str] = None
     pending_restart_reason: Optional[str] = None
     last_push_succeeded: bool = False

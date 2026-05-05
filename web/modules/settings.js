@@ -221,6 +221,15 @@ export function initSettings({ state }) {
         applyInputValue('s-network-password', s.OUROBOROS_NETWORK_PASSWORD);
         applyInputValue('s-telegram-token', s.TELEGRAM_BOT_TOKEN);
         applyInputValue('s-telegram-chat-id', s.TELEGRAM_CHAT_ID);
+        applyInputValue('s-dialogs-endpoint', s.DIALOGS_GRPC_ENDPOINT);
+        applyInputValue('s-dialogs-bot-token', s.DIALOGS_BOT_TOKEN);
+        if (s.DIALOGS_APP_ID !== null && s.DIALOGS_APP_ID !== undefined) byId('s-dialogs-app-id').value = s.DIALOGS_APP_ID;
+        applyInputValue('s-dialogs-app-title', s.DIALOGS_APP_TITLE);
+        applyInputValue('s-dialogs-device-title', s.DIALOGS_DEVICE_TITLE);
+        applyCheckboxValue('s-dialogs-trust-certs', s.DIALOGS_GRPC_TRUST_ALL_SERVER_CERTIFICATES);
+        if (s.DIALOGS_GRPC_KEEPALIVE_TIME_MS !== null && s.DIALOGS_GRPC_KEEPALIVE_TIME_MS !== undefined) byId('s-dialogs-keepalive-time').value = s.DIALOGS_GRPC_KEEPALIVE_TIME_MS;
+        if (s.DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS !== null && s.DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS !== undefined) byId('s-dialogs-keepalive-timeout').value = s.DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS;
+        applyCheckboxValue('s-dialogs-keepalive-permit', s.DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS);
 
         applyInputValue('s-model', s.OUROBOROS_MODEL);
         applyInputValue('s-model-code', s.OUROBOROS_MODEL_CODE);
@@ -379,6 +388,14 @@ export function initSettings({ state }) {
             OPENAI_COMPATIBLE_BASE_URL: byId('s-openai-compatible-base-url').value.trim(),
             CLOUDRU_FOUNDATION_MODELS_BASE_URL: byId('s-cloudru-base-url').value.trim(),
             TELEGRAM_CHAT_ID: byId('s-telegram-chat-id').value.trim(),
+            DIALOGS_GRPC_ENDPOINT: byId('s-dialogs-endpoint').value.trim(),
+            DIALOGS_APP_ID: readInt('s-dialogs-app-id', 0),
+            DIALOGS_APP_TITLE: byId('s-dialogs-app-title').value.trim(),
+            DIALOGS_DEVICE_TITLE: byId('s-dialogs-device-title').value.trim(),
+            DIALOGS_GRPC_TRUST_ALL_SERVER_CERTIFICATES: byId('s-dialogs-trust-certs').checked,
+            DIALOGS_GRPC_KEEPALIVE_TIME_MS: readInt('s-dialogs-keepalive-time', 30000),
+            DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS: readInt('s-dialogs-keepalive-timeout', 10000),
+            DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS: byId('s-dialogs-keepalive-permit').checked,
         };
 
         collectSecretValue('s-openrouter', body);
@@ -388,6 +405,7 @@ export function initSettings({ state }) {
         collectSecretValue('s-anthropic', body);
         collectSecretValue('s-network-password', body);
         collectSecretValue('s-telegram-token', body);
+        collectSecretValue('s-dialogs-bot-token', body);
         collectSecretValue('s-gh-token', body);
 
         return body;

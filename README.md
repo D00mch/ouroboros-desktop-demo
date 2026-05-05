@@ -124,6 +124,7 @@ The Settings page also includes:
 
 - optional `/api/model-catalog` lookup for configured providers
 - Telegram bridge configuration (`TELEGRAM_BOT_TOKEN`, primary chat binding, mirrored delivery controls)
+- SberChat/Dialog runtime configuration (`DIALOGS_BOT_TOKEN`, gRPC endpoint, app/device titles, keepalive options)
 - a refactored desktop-first tabbed UI with searchable model pickers, segmented effort controls, masked-secret toggles, explicit `Clear` actions, and local-model controls
 
 ### Run Tests
@@ -359,6 +360,7 @@ Created on first launch:
 | Cloud.ru Foundation Models API Key | No | Cloud.ru Foundation Models provider |
 | Anthropic API Key | No | [console.anthropic.com](https://console.anthropic.com/settings/keys) — direct Anthropic runtime + Claude Agent SDK |
 | Telegram Bot Token | No | [@BotFather](https://t.me/BotFather) — enables the Telegram bridge |
+| SberChat Dialogs Bot Token | No | SberChat/Dialog bot credentials — enables the Dialogs gRPC bridge |
 | GitHub Token | No | [github.com/settings/tokens](https://github.com/settings/tokens) — enables remote sync |
 
 All keys are configured through the **Settings** page in the UI or during the first-run wizard.

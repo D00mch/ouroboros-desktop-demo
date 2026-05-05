@@ -81,6 +81,7 @@ a = Analysis(
         ('server.py', '.'),
         ('ouroboros', 'ouroboros'),
         ('supervisor', 'supervisor'),
+        ('scalapb', 'scalapb'),
         ('prompts', 'prompts'),
         ('web', 'web'),
         ('docs', 'docs'),

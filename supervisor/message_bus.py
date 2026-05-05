@@ -32,6 +32,13 @@ BUDGET_REPORT_EVERY_MESSAGES: int = 10
 _BRIDGE: Optional["LocalChatBridge"] = None
 
 
+def _as_int_or_none(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def init(
     drive_root,
     total_budget_limit: float,
@@ -101,11 +108,9 @@ class LocalChatBridge:
         """
         chat_id = payload.get("chat_id")
         if chat_id is not None:
-            try:
-                if int(chat_id) < 0:
-                    return
-            except (ValueError, TypeError):
-                pass
+            numeric_chat_id = _as_int_or_none(chat_id)
+            if numeric_chat_id is not None and numeric_chat_id < 0:
+                return
         if self._broadcast_fn:
             self._broadcast_fn(payload)
 
@@ -249,12 +254,13 @@ class LocalChatBridge:
 
     def _telegram_target(self, preferred_chat_id: int = 0) -> int:
         # Reject A2A virtual chat IDs (negative values) — they must not route to Telegram
-        if preferred_chat_id is not None and int(preferred_chat_id) < 0:
+        preferred_numeric = _as_int_or_none(preferred_chat_id)
+        if preferred_numeric is not None and preferred_numeric < 0:
             preferred_chat_id = None
         if self._telegram_chat_id:
             return self._telegram_chat_id
-        if preferred_chat_id and int(preferred_chat_id) > 1:
-            return int(preferred_chat_id)
+        if preferred_numeric is not None and preferred_numeric > 1:
+            return preferred_numeric
         return int(self._telegram_active_chat_id or 0)
 
     def _register_telegram_chat(self, chat_id: int) -> None:
@@ -518,7 +524,8 @@ class LocalChatBridge:
             except Exception:
                 log.debug("A2A response callback error for sub %s", sid, exc_info=True)
         # Skip WebSocket broadcast for A2A virtual chat_ids (negative values)
-        if self._broadcast_fn and chat_id >= 0:
+        numeric_chat_id = _as_int_or_none(chat_id)
+        if self._broadcast_fn and (numeric_chat_id is None or numeric_chat_id >= 0):
             self._broadcast_fn({
                 "type": "chat",
                 "role": "assistant",
@@ -528,7 +535,8 @@ class LocalChatBridge:
                 "ts": message_ts,
                 "task_id": str(task_id or ""),
             })
-        self._send_telegram_text(_strip_markdown(clean_text), preferred_chat_id=chat_id)
+        if numeric_chat_id is not None:
+            self._send_telegram_text(_strip_markdown(clean_text), preferred_chat_id=numeric_chat_id)
         return True, "ok"
 
     def send_chat_action(self, chat_id: int, action: str = "typing") -> bool:
@@ -539,8 +547,9 @@ class LocalChatBridge:
         })
         if self._broadcast_fn:
             self._broadcast_fn({"type": "typing", "action": action})
-        if action == "typing":
-            self._send_telegram_action("typing", preferred_chat_id=chat_id)
+        numeric_chat_id = _as_int_or_none(chat_id)
+        if action == "typing" and numeric_chat_id is not None:
+            self._send_telegram_action("typing", preferred_chat_id=numeric_chat_id)
         return True
 
     def send_photo(
@@ -563,7 +572,9 @@ class LocalChatBridge:
         self._outbox.put(msg)
         if self._broadcast_fn:
             self._broadcast_fn(msg)
-        self._send_telegram_photo(photo_bytes, caption=caption, mime=mime, preferred_chat_id=chat_id)
+        numeric_chat_id = _as_int_or_none(chat_id)
+        if numeric_chat_id is not None:
+            self._send_telegram_photo(photo_bytes, caption=caption, mime=mime, preferred_chat_id=numeric_chat_id)
         return True, "ok"
 
     def download_file_base64(

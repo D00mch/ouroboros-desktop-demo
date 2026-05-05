@@ -79,7 +79,7 @@ class OuroborosAgent:
         self.env = env
         self._pending_events: List[Dict[str, Any]] = []
         self._event_queue: Any = event_queue
-        self._current_chat_id: Optional[int] = None
+        self._current_chat_id: Any = None
         self._current_task_type: Optional[str] = None
         self._current_task_id: Optional[str] = None
 
@@ -264,7 +264,7 @@ class OuroborosAgent:
         self._task_started_ts = start_time
         self._last_progress_ts = start_time
         self._pending_events = []
-        self._current_chat_id = int(task.get("chat_id") or 0) or None
+        self._current_chat_id = task.get("chat_id") if task.get("chat_id") not in (None, "") else None
         self._current_task_type = str(task.get("type") or "")
         self._current_task_id = str(task.get("id") or "") or None
         self._emit_live_log(

@@ -127,6 +127,8 @@ def ensure_state_defaults(st: Dict[str, Any]) -> Dict[str, Any]:
     st.setdefault("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
     st.setdefault("owner_id", None)
     st.setdefault("owner_chat_id", None)
+    st.setdefault("owner_chat_source", "")
+    st.setdefault("provider_state", {})
     st.setdefault("message_offset", 0)
     if "tg_offset" in st:
         st.setdefault("message_offset", st.pop("tg_offset"))

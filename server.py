@@ -88,6 +88,7 @@ _SECRET_SETTING_KEYS = {
     "CLOUDRU_FOUNDATION_MODELS_API_KEY",
     "ANTHROPIC_API_KEY",
     "TELEGRAM_BOT_TOKEN",
+    "DIALOGS_BOT_TOKEN",
     "GITHUB_TOKEN",
     "OUROBOROS_NETWORK_PASSWORD",
 }
@@ -263,6 +264,15 @@ _RESTART_REQUIRED_KEYS = frozenset({
     "A2A_AGENT_DESCRIPTION",
     "A2A_MAX_CONCURRENT",
     "A2A_TASK_TTL_HOURS",
+    "DIALOGS_GRPC_ENDPOINT",
+    "DIALOGS_BOT_TOKEN",
+    "DIALOGS_APP_ID",
+    "DIALOGS_APP_TITLE",
+    "DIALOGS_DEVICE_TITLE",
+    "DIALOGS_GRPC_TRUST_ALL_SERVER_CERTIFICATES",
+    "DIALOGS_GRPC_KEEPALIVE_TIME_MS",
+    "DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS",
+    "DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS",
 })
 
 
@@ -470,6 +480,7 @@ def _process_bridge_updates(bridge, offset: int, ctx: Any) -> int:
         if st.get("owner_id") is None:
             st["owner_id"] = user_id
             st["owner_chat_id"] = chat_id
+            st["owner_chat_source"] = source
 
         from supervisor.message_bus import log_chat
 
@@ -656,6 +667,13 @@ def _run_supervisor(settings: dict) -> None:
     try:
         from supervisor.message_bus import init as bus_init
         from supervisor.message_bus import LocalChatBridge
+        from supervisor.runtime_config import load_runtime_config
+        from supervisor.server_runtime import (
+            attach_dialogs_transport_fanout,
+            build_server_runtime_transport,
+            prepare_supervisor_runtime,
+            start_dialogs_runtime_input_thread,
+        )
 
         bridge = LocalChatBridge(settings)
         bridge._broadcast_fn = broadcast_ws_sync
@@ -679,6 +697,42 @@ def _run_supervisor(settings: dict) -> None:
         ok, msg = _bootstrap_supervisor_repo(settings)
         if not ok:
             log.error("Supervisor bootstrap failed: %s", msg)
+
+        runtime_env = dict(os.environ)
+        runtime_env.setdefault("GITHUB_USER", "")
+        runtime_env.setdefault("GITHUB_REPO", str(settings.get("GITHUB_REPO", "") or ""))
+        runtime_env.setdefault("OUROBOROS_DATA_DIR", str(DATA_DIR))
+        runtime_env.setdefault("OUROBOROS_REPO_DIR", str(REPO_DIR))
+        runtime_config = load_runtime_config(runtime_env, cwd=REPO_DIR)
+        runtime_transport = None
+        dialogs_status = "disabled"
+        dialogs_error = ""
+        if runtime_config.dialogs_bot_token:
+            runtime_transport = build_server_runtime_transport(
+                runtime_config=runtime_config,
+                bridge=bridge,
+                logger=log,
+            )
+            dialogs_status = "ready" if runtime_transport.provider_active else "degraded"
+            if runtime_transport.startup_error:
+                dialogs_error = str(runtime_transport.startup_error)
+                log.warning("Dialogs runtime startup warning: %s", dialogs_error)
+
+        st_runtime = load_state()
+        provider_state = st_runtime.get("provider_state")
+        if not isinstance(provider_state, dict):
+            provider_state = {}
+            st_runtime["provider_state"] = provider_state
+        dialogs_state = provider_state.get("dialogs")
+        if not isinstance(dialogs_state, dict):
+            dialogs_state = {}
+            provider_state["dialogs"] = dialogs_state
+        dialogs_state["status"] = dialogs_status
+        if dialogs_error:
+            dialogs_state["last_error"] = dialogs_error
+        else:
+            dialogs_state.pop("last_error", None)
+        save_state(st_runtime)
 
         from supervisor.queue import (
             enqueue_task, enforce_task_timeouts, enqueue_evolution_task_if_needed,
@@ -712,56 +766,61 @@ def _run_supervisor(settings: dict) -> None:
         from supervisor.events import dispatch_event
         from supervisor.message_bus import send_with_budget
         from ouroboros.consciousness import BackgroundConsciousness
-        import types
         import queue as _queue_mod
 
-        kill_workers()
-        spawn_workers(max_workers)
-        restored_pending = restore_pending_from_snapshot()
-        persist_queue_snapshot(reason="startup")
-
-        if restored_pending > 0:
-            st_boot = load_state()
-            if st_boot.get("owner_chat_id"):
-                send_with_budget(int(st_boot["owner_chat_id"]),
-                    f"♻️ Restored pending queue from snapshot: {restored_pending} tasks.")
-
-        auto_resume_after_restart()
-
-        def _get_owner_chat_id() -> Optional[int]:
-            try:
-                st = load_state()
-                cid = st.get("owner_chat_id")
-                return int(cid) if cid else None
-            except Exception:
-                return None
-
-        _consciousness = BackgroundConsciousness(
-            drive_root=DATA_DIR, repo_dir=REPO_DIR,
-            event_queue=get_event_q(), owner_chat_id_fn=_get_owner_chat_id,
-        )
-
-        _bg_st = load_state()
-        if _bg_st.get("bg_consciousness_enabled"):
-            _consciousness.start()
-            log.info("Background consciousness auto-restored from saved state.")
-
         branch_dev, branch_stable = _runtime_branch_defaults()
-        _event_ctx = types.SimpleNamespace(
-            DRIVE_ROOT=DATA_DIR, REPO_DIR=REPO_DIR,
-            BRANCH_DEV=branch_dev, BRANCH_STABLE=branch_stable,
-            bridge=bridge, WORKERS=WORKERS, PENDING=PENDING, RUNNING=RUNNING,
-            MAX_WORKERS=max_workers,
-            send_with_budget=send_with_budget, load_state=load_state, save_state=save_state,
-            update_budget_from_usage=update_budget_from_usage, append_jsonl=append_jsonl,
-            enqueue_task=enqueue_task, cancel_task_by_id=cancel_task_by_id,
-            queue_deep_self_review_task=queue_deep_self_review_task, persist_queue_snapshot=persist_queue_snapshot,
-            safe_restart=safe_restart, kill_workers=kill_workers, spawn_workers=spawn_workers,
-            sort_pending=sort_pending, consciousness=_consciousness,
-            soft_timeout=soft_timeout, hard_timeout=hard_timeout,
-            get_chat_agent=_get_chat_agent, handle_chat_direct=handle_chat_direct,
+        _consciousness, _event_ctx = prepare_supervisor_runtime(
+            bridge=bridge,
+            max_workers=max_workers,
+            drive_root=DATA_DIR,
+            repo_dir=REPO_DIR,
+            load_state=load_state,
+            save_state=save_state,
+            append_jsonl=append_jsonl,
+            update_budget_from_usage=update_budget_from_usage,
+            send_with_budget=send_with_budget,
+            restore_pending_from_snapshot=restore_pending_from_snapshot,
+            persist_queue_snapshot=persist_queue_snapshot,
+            auto_resume_after_restart=auto_resume_after_restart,
+            get_event_q=get_event_q,
+            WORKERS=WORKERS,
+            PENDING=PENDING,
+            RUNNING=RUNNING,
+            enqueue_task=enqueue_task,
+            cancel_task_by_id=cancel_task_by_id,
+            queue_review_task=queue_deep_self_review_task,
+            safe_restart=safe_restart,
+            kill_workers=kill_workers,
+            spawn_workers=spawn_workers,
+            sort_pending=sort_pending,
+            BackgroundConsciousness=BackgroundConsciousness,
             request_restart=_request_restart_exit,
+            logger=log,
         )
+        _event_ctx.BRANCH_DEV = branch_dev
+        _event_ctx.BRANCH_STABLE = branch_stable
+        _event_ctx.soft_timeout = soft_timeout
+        _event_ctx.hard_timeout = hard_timeout
+        _event_ctx.get_chat_agent = _get_chat_agent
+        _event_ctx.handle_chat_direct = handle_chat_direct
+        _event_ctx.queue_deep_self_review_task = queue_deep_self_review_task
+        _event_ctx.execute_panic_stop = lambda: _execute_panic_stop(_consciousness, _event_ctx.kill_workers)
+        _event_ctx.runtime_transport = runtime_transport
+
+        if runtime_transport is not None:
+            attach_dialogs_transport_fanout(_event_ctx, runtime_transport, load_state)
+
+            dialogs_cursor = int((((load_state().get("provider_state") or {}).get("dialogs") or {}).get("seq") or 0))
+            dialogs_cursor_ref = {"value": dialogs_cursor}
+            runtime_transport.dialogs_cursor_ref = dialogs_cursor_ref
+            _event_ctx.dialogs_cursor_ref = dialogs_cursor_ref
+            runtime_transport.dialogs_input_thread = start_dialogs_runtime_input_thread(
+                runtime_transport=runtime_transport,
+                dialogs_cursor_ref=dialogs_cursor_ref,
+                ctx=_event_ctx,
+                logger=log,
+                stop_event=_restart_requested,
+            )
     except Exception as exc:
         _supervisor_error = f"Supervisor init failed: {exc}"
         _consciousness = None
@@ -817,7 +876,7 @@ def _handle_restart_in_supervisor(evt: Dict[str, Any], ctx: Any) -> None:
     st = ctx.load_state()
     if st.get("owner_chat_id"):
         ctx.send_with_budget(
-            int(st["owner_chat_id"]),
+            st["owner_chat_id"],
             f"♻️ Restart requested by agent: {evt.get('reason')}",
         )
     ok, msg = ctx.safe_restart(
@@ -825,7 +884,7 @@ def _handle_restart_in_supervisor(evt: Dict[str, Any], ctx: Any) -> None:
     )
     if not ok:
         if st.get("owner_chat_id"):
-            ctx.send_with_budget(int(st["owner_chat_id"]), f"⚠️ Restart skipped: {msg}")
+            ctx.send_with_budget(st["owner_chat_id"], f"⚠️ Restart skipped: {msg}")
         return
     ctx.kill_workers(force=True)
     st2 = ctx.load_state()
@@ -1021,6 +1080,8 @@ async def api_state(request: Request) -> JSONResponse:
         from supervisor.queue import get_evolution_status_snapshot
         from ouroboros.config import get_runtime_mode, get_skills_repo_path
         st = load_state()
+        provider_state = st.get("provider_state") if isinstance(st.get("provider_state"), dict) else {}
+        dialogs_state = provider_state.get("dialogs") if isinstance(provider_state.get("dialogs"), dict) else {}
         alive = 0
         total_w = 0
         try:
@@ -1050,6 +1111,7 @@ async def api_state(request: Request) -> JSONResponse:
             "evolution_state": evolution_state,
             "bg_consciousness_state": bg_state,
             "spent_calls": int(st.get("spent_calls") or 0),
+            "dialogs_state": dialogs_state,
             "supervisor_ready": _supervisor_ready.is_set(),
             "supervisor_error": _supervisor_error,
             # Phase 2 plumbing: surface the runtime-mode axis to the UI

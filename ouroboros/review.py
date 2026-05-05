@@ -86,7 +86,13 @@ MAX_TOTAL_FUNCTIONS = 1560  # v5.2.2: dual-track grants for in-process extension
 # candidate exists (onboarding/settings HTTP leg → ``ouroboros/server_ui.py``)
 # but is deferred to a dedicated structural refactor rather than
 # blocking the pre-release.
-GRANDFATHERED_OVERSIZED_MODULES = {"llm.py", "claude_advisory_review.py", "review_state.py", "server.py"}
+GRANDFATHERED_OVERSIZED_MODULES = {
+    "llm.py",
+    "claude_advisory_review.py",
+    "review_state.py",
+    "server.py",
+    "messaging_pb2_grpc.py",
+}
 # Immutable bundle-only entrypoints ship with release artifacts but should not
 # count against the self-editable codebase function budget.
 FUNCTION_COUNT_EXCLUDED_FILES = {"launcher.py"}

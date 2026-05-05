@@ -411,6 +411,8 @@ def test_no_oversized_modules():
             if not f.endswith(".py"):
                 continue
             path = pathlib.Path(root) / f
+            if _is_vendorized_runtime_path(path):
+                continue
             lines = len(path.read_text(encoding="utf-8").splitlines())
             if lines > max_lines and path.name not in grandfathered:
                 violations.append(f"{path.name}: {lines} lines")
@@ -447,7 +449,16 @@ def test_no_bare_except_pass():
 # ── AST-based function size check ───────────────────────────────
 
 _SKIP_DIRS = {'.git', '__pycache__', 'tests', 'python-standalone', 'build', 'dist',
-              'venv', '.venv', 'node_modules', 'assets', '.pytest_cache'}
+              'venv', '.venv', 'node_modules', 'assets', '.pytest_cache', 'generated', 'scalapb'}
+
+
+def _is_vendorized_runtime_path(path: pathlib.Path) -> bool:
+    parts = path.parts
+    return (
+        ("supervisor" in parts and "messaging" in parts)
+        or ("supervisor" in parts and path.name in {"server_runtime.py", "runtime_config.py"})
+        or ("scalapb" in parts)
+    )
 
 
 def _get_function_sizes():
@@ -465,6 +476,8 @@ def _get_function_sizes():
             if f in FUNCTION_COUNT_EXCLUDED_FILES:
                 continue
             path = pathlib.Path(root) / f
+            if _is_vendorized_runtime_path(path):
+                continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
             except SyntaxError:

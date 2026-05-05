@@ -36,6 +36,10 @@ dependencies = [
     "uvicorn[standard]",
     "websockets",
     "claude-agent-sdk>=0.1.60",
+    "grpcio",
+    "grpcio-tools",
+    "protobuf",
+    "googleapis-common-protos",
     # Declared explicitly so ``ouroboros/contracts/api_v1.py`` can rely on
     # ``typing_extensions.NotRequired`` on Python 3.10 (``typing.NotRequired``
     # is only available on 3.11+). In practice many transitive deps already
@@ -76,7 +80,7 @@ markers = [
 py-modules = ["server"]
 
 [tool.setuptools.packages.find]
-include = ["ouroboros*", "supervisor*", "web*"]
+include = ["ouroboros*", "supervisor*", "web*", "scalapb*"]
 
 [tool.setuptools.package-data]
 web = [
@@ -89,6 +93,9 @@ web = [
     "providers/*.svg",
     "providers/*.png",
     "providers/*.ico",
+]
+supervisor = [
+    "messaging/*.json",
 ]
 
 [tool.ruff]
