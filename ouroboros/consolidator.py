@@ -50,6 +50,13 @@ def should_consolidate(
     chat_path: pathlib.Path,
 ) -> bool:
     """Check if chat.jsonl has BLOCK_SIZE+ new messages since last consolidation."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return False
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     if not chat_path.exists():
         return False
     meta = _load_meta(meta_path)
@@ -80,6 +87,13 @@ def consolidate(
     Uses fcntl file lock to serialize concurrent consolidation attempts.
     Returns usage dict or None if nothing to consolidate.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     lock_path = meta_path.parent / ".consolidation.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_fd = None
@@ -552,6 +566,13 @@ SCRATCHPAD_CONSOLIDATION_THRESHOLD = 30000
 def should_consolidate_scratchpad(memory: Any) -> bool:
     """Check if scratchpad blocks total content exceeds threshold."""
     try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return False
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
+    try:
         blocks = memory.load_scratchpad_blocks()
         if len(blocks) < 3:
             sp = memory.scratchpad_path()
@@ -577,6 +598,13 @@ def consolidate_scratchpad(
     and regenerates scratchpad.md. Falls back to flat-file mode if no
     blocks exist yet.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     blocks = memory.load_scratchpad_blocks()
 
     if len(blocks) >= 3:

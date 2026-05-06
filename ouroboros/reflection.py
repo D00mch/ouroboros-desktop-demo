@@ -257,6 +257,23 @@ def generate_reflection(
 
     Returns a structured dict ready for appending to the reflections JSONL.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return {
+                "ts": utc_now_iso(),
+                "task_id": task.get("id"),
+                "task_type": task.get("type", "task"),
+                "trigger": "disabled",
+                "markers": ["auxiliary_llm_disabled"],
+                "review_evidence": review_evidence or {},
+                "reflection": "(execution reflection disabled in basic/light runtime)",
+                "cost_usd": 0.0,
+                "usage": {},
+            }
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     from ouroboros.llm import DEFAULT_LIGHT_MODEL
 
     goal = _truncate_with_notice(task.get("text", ""), 200)
@@ -416,6 +433,13 @@ _PATTERNS_HEADER = (
 
 def _update_patterns(drive_root: pathlib.Path, entry: Dict[str, Any]) -> None:
     """Update patterns.md knowledge base topic via LLM (Pattern Register)."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     from ouroboros.llm import LLMClient, DEFAULT_LIGHT_MODEL
 
     patterns_path = drive_root / "memory" / "knowledge" / "patterns.md"

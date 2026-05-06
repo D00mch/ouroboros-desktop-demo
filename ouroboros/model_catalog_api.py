@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Awaitable, Callable
@@ -10,8 +9,6 @@ from typing import Awaitable, Callable
 import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-
-from ouroboros.config import load_settings
 
 log = logging.getLogger(__name__)
 
@@ -271,37 +268,17 @@ async def _load_provider(
 
 
 async def api_model_catalog(_request: Request) -> JSONResponse:
-    settings = load_settings()
-    items: list[dict[str, str]] = []
-    errors: list[dict[str, str]] = []
-    seen_values: set[str] = set()
-    specs = _provider_specs(settings)
+    from ouroboros.provider_models import DEMO_LLM_MODEL
 
-    timeout = httpx.Timeout(_CATALOG_HTTP_TIMEOUT_SEC)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        results = await asyncio.gather(*[
-            _load_provider(client, provider_id, loader)
-            for provider_id, loader in specs
-        ])
-
-    for provider_id, provider_items, error, stage, duration_ms in results:
-        if error:
-            errors.append({
-                "provider_id": provider_id,
-                "error": error,
-                "stage": stage,
-                "duration_ms": duration_ms,
-            })
-            continue
-        for item in provider_items:
-            value = str(item.get("value", "") or "")
-            if not value or value in seen_values:
-                continue
-            seen_values.add(value)
-            items.append(item)
-
-    items.sort(key=lambda item: (item.get("provider", "").lower(), item.get("label", "").lower()))
     return JSONResponse({
-        "items": items,
-        "errors": errors,
+        "items": [{
+            "provider_id": "gigachat-demo",
+            "provider": "GigaChat Demo",
+            "source": "GigaChat Demo",
+            "id": DEMO_LLM_MODEL,
+            "name": DEMO_LLM_MODEL,
+            "value": DEMO_LLM_MODEL,
+            "label": f"GigaChat Demo · {DEMO_LLM_MODEL}",
+        }],
+        "errors": [],
     })

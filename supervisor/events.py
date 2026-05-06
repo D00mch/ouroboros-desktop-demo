@@ -326,6 +326,13 @@ def _handle_task_metrics(evt: Dict[str, Any], ctx: Any) -> None:
 
 
 def _handle_deep_self_review_request(evt: Dict[str, Any], ctx: Any) -> None:
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     ctx.queue_deep_self_review_task(
         reason=str(evt.get("reason") or "agent_self_review"),
         model=str(evt.get("model") or ""),
@@ -380,6 +387,13 @@ def _find_duplicate_task(desc: str, task_context: str, pending: list, running: d
     Returns task_id of the duplicate if found, None otherwise.
     On any error (API, timeout, import) — returns None (accept the task).
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     existing = []
     for task in pending:
         description, context = _extract_task_description_and_context(task)
@@ -404,49 +418,7 @@ def _find_duplicate_task(desc: str, task_context: str, pending: list, running: d
     if not existing:
         return None
 
-    existing_lines = "\n\n".join(
-        _format_task_for_dedup(e["id"], e["description"], e["context"])
-        for e in existing
-    )
-    prompt = (
-        "Determine whether the NEW task is a true duplicate of any EXISTING active task.\n"
-        "Only return a task ID if the requested work is materially the same.\n"
-        "Tasks that share a broad goal but differ in target model, creative focus, "
-        "scope, parent context, or intended output are NOT duplicates.\n\n"
-        "NEW TASK\n"
-        f"{_format_task_for_dedup('NEW', desc, task_context)}\n\n"
-        f"EXISTING ACTIVE TASKS\n{existing_lines}\n\n"
-        "Reply ONLY with the task ID if duplicate, or NONE if not."
-    )
-
-    try:
-        from ouroboros.llm import LLMClient, DEFAULT_LIGHT_MODEL
-        light_model = os.environ.get("OUROBOROS_MODEL_LIGHT") or DEFAULT_LIGHT_MODEL
-        client = LLMClient()
-        resp_msg, usage = client.chat(
-            messages=[{"role": "user", "content": prompt}],
-            model=light_model,
-            reasoning_effort="low",
-            max_tokens=50,
-        )
-        # Track cost — supervisor runs outside task context, update directly.
-        if usage:
-            try:
-                from supervisor.state import update_budget_from_usage
-                update_budget_from_usage(usage)
-            except Exception:
-                pass
-        answer = (resp_msg.get("content") or "NONE").strip()
-        if answer.upper() == "NONE" or not answer:
-            return None
-        answer_lower = answer.lower()
-        for e in existing:
-            if e["id"].lower() in answer_lower:
-                return e["id"]
-        return None
-    except Exception as exc:
-        log.warning("LLM dedup unavailable, accepting task: %s", exc)
-        return None
+    return None
 
 
 def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
@@ -466,7 +438,7 @@ def _handle_schedule_task(evt: Dict[str, Any], ctx: Any) -> None:
         return
 
     if owner_chat_id and desc:
-        # --- Task deduplication (Bible P5: LLM-First, not hardcoded heuristics) ---
+        # LLM deduplication is disabled in basic mode.
         from supervisor.queue import PENDING, RUNNING
         dup_id = _find_duplicate_task(desc, task_context, PENDING, RUNNING)
         if dup_id:
@@ -534,6 +506,13 @@ def _handle_cancel_task(evt: Dict[str, Any], ctx: Any) -> None:
 def _handle_toggle_evolution(evt: Dict[str, Any], ctx: Any) -> None:
     """Toggle evolution mode from LLM tool call."""
     enabled = bool(evt.get("enabled"))
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if enabled and auxiliary_llm_disabled():
+            enabled = False
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     st = ctx.load_state()
     st["evolution_mode_enabled"] = enabled
     ctx.save_state(st)
@@ -551,6 +530,18 @@ def _handle_toggle_consciousness(evt: Dict[str, Any], ctx: Any) -> None:
     from supervisor.state import update_state
     action = str(evt.get("action") or "status")
     if action in ("start", "on"):
+        try:
+            from ouroboros.config import auxiliary_llm_disabled
+            if auxiliary_llm_disabled():
+                result = "Background consciousness disabled in basic/light runtime."
+                update_state(lambda st: st.__setitem__("bg_consciousness_enabled", False))
+                st = ctx.load_state()
+                if st.get("owner_chat_id"):
+                    ctx.send_with_budget(st["owner_chat_id"], f"🧠 {result}")
+                return
+        except Exception:
+            log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
         result = ctx.consciousness.start()
         update_state(lambda st: st.__setitem__("bg_consciousness_enabled", True))
     elif action in ("stop", "off"):
@@ -652,13 +643,10 @@ EVENT_HANDLERS = {
     "send_message": _handle_send_message,
     "task_done": _handle_task_done,
     "task_metrics": _handle_task_metrics,
-    "deep_self_review_request": _handle_deep_self_review_request,
     "promote_to_stable": _handle_promote_to_stable,
     "schedule_task": _handle_schedule_task,
     "cancel_task": _handle_cancel_task,
     "send_photo": _handle_send_photo,
-    "toggle_evolution": _handle_toggle_evolution,
-    "toggle_consciousness": _handle_toggle_consciousness,
     "owner_message_injected": _handle_owner_message_injected,
     "log_event": _handle_log_event,
 }

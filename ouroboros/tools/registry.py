@@ -327,7 +327,7 @@ CORE_TOOL_NAMES = {
     "set_tool_timeout",
     "update_scratchpad", "update_identity",
     "chat_history", "web_search",
-    "send_user_message", "switch_model",
+    "send_user_message",
     "request_restart", "promote_to_stable",
     "knowledge_read", "knowledge_write", "knowledge_list",
     "browse_page", "browser_action", "analyze_screenshot",
@@ -347,20 +347,52 @@ class ToolRegistry:
         self._load_modules()
 
     _FROZEN_TOOL_MODULES = [
-        "a2a", "browser", "ci", "claude_advisory_review", "compact_context", "control",
-        "core", "employee_directory", "evolution_stats", "git", "git_rollback", "github", "health",
-        "knowledge", "memory_tools", "plan_review", "review", "search", "shell",
+        "a2a", "browser", "ci", "compact_context", "control",
+        "core", "employee_directory", "git", "git_rollback", "github", "health",
+        "knowledge", "memory_tools", "search", "shell",
         # Phase 3 three-layer refactor: external skill surface
         # (list_skills / review_skill / skill_exec / toggle_skill).
         "skill_exec",
         "tool_discovery", "vision",
     ]
+    _AUX_LLM_TOOL_MODULES = {
+        "claude_advisory_review",
+        "evolution_stats",
+        "plan_review",
+        "review",
+    }
+    _AUX_LLM_TOOL_NAMES = {
+        "advisory_pre_review",
+        "multi_model_review",
+        "plan_task",
+        "request_deep_self_review",
+        "review_skill",
+        "summarize_dialogue",
+        "toggle_consciousness",
+        "toggle_evolution",
+        "vlm_query",
+        "analyze_screenshot",
+        "compact_context",
+    }
+    _REMOVED_BASIC_TOOL_MODULES = {
+        "claude_advisory_review",
+        "evolution_stats",
+        "plan_review",
+        "review",
+    }
 
     def _load_modules(self) -> None:
         """Auto-discover tool modules in ouroboros/tools/ that export get_tools()."""
         import importlib
         import logging
         import sys
+        try:
+            from ouroboros.config import auxiliary_llm_disabled
+            aux_disabled = auxiliary_llm_disabled()
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Failed to evaluate auxiliary LLM policy", exc_info=True)
+            aux_disabled = False
 
         if getattr(sys, 'frozen', False):
             module_names = self._FROZEN_TOOL_MODULES
@@ -373,10 +405,16 @@ class ToolRegistry:
             ]
 
         for modname in module_names:
+            if modname in self._REMOVED_BASIC_TOOL_MODULES:
+                continue
+            if aux_disabled and modname in self._AUX_LLM_TOOL_MODULES:
+                continue
             try:
                 mod = importlib.import_module(f"ouroboros.tools.{modname}")
                 if hasattr(mod, "get_tools"):
                     for entry in mod.get_tools():
+                        if aux_disabled and entry.name in self._AUX_LLM_TOOL_NAMES:
+                            continue
                         self._entries[entry.name] = entry
             except Exception:
                 logging.getLogger(__name__).warning(

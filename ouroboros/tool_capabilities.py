@@ -52,7 +52,6 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     # Communication
     "send_user_message", "send_photo",
     # Control
-    "switch_model",
     "request_restart", "promote_to_stable",
     # Advisory pre-review gate
     "advisory_pre_review", "review_status",

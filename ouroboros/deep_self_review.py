@@ -200,11 +200,16 @@ def is_review_available() -> Tuple[bool, Optional[str]]:
 
     Returns (available, model_id).
     """
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return True, "openai/gpt-5.5-pro"
-    if os.environ.get("OPENAI_API_KEY") and not os.environ.get("OPENAI_BASE_URL"):
-        return True, "openai::gpt-5.5-pro"
-    return False, None
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return False, None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
+    from ouroboros.provider_models import DEMO_LLM_MODEL
+
+    return True, DEMO_LLM_MODEL
 
 
 def run_deep_self_review(
@@ -237,6 +242,13 @@ def run_deep_self_review(
     ``_chat_remote`` path of ``llm.py``.  Regular task LLM calls are
     unaffected.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return "Deep self-review is disabled in basic/light runtime.", {}
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     try:
         # 1. Build pack
         emit_progress("Building review pack (reading all tracked files)...")

@@ -616,12 +616,10 @@ def prepare_supervisor_runtime(
     RUNNING,
     enqueue_task,
     cancel_task_by_id,
-    queue_review_task,
     safe_restart,
     kill_workers,
     spawn_workers,
     sort_pending,
-    BackgroundConsciousness,
     request_restart,
     logger,
     provider_send_with_budget: Any = None,
@@ -654,6 +652,16 @@ def prepare_supervisor_runtime(
     spawn_workers(max_workers)
     restored_pending = restore_pending_from_snapshot()
     persist_queue_snapshot(reason="startup")
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            st_basic = load_state()
+            if st_basic.get("evolution_mode_enabled") or st_basic.get("bg_consciousness_enabled"):
+                st_basic["evolution_mode_enabled"] = False
+                st_basic["bg_consciousness_enabled"] = False
+                save_state(st_basic)
+    except Exception:
+        logger.debug("Failed to apply auxiliary LLM startup policy", exc_info=True)
 
     if restored_pending > 0:
         st_boot = load_state()
@@ -664,25 +672,6 @@ def prepare_supervisor_runtime(
             )
 
     auto_resume_after_restart()
-
-    def _get_owner_chat_id():
-        try:
-            st = load_state()
-            return st.get("owner_chat_id")
-        except Exception:
-            return None
-
-    consciousness = BackgroundConsciousness(
-        drive_root=drive_root,
-        repo_dir=repo_dir,
-        event_queue=get_event_q(),
-        owner_chat_id_fn=_get_owner_chat_id,
-    )
-
-    bg_state = load_state()
-    if bg_state.get("bg_consciousness_enabled"):
-        consciousness.start()
-        logger.info("Background consciousness auto-restored from saved state.")
 
     event_ctx = types.SimpleNamespace(
         DRIVE_ROOT=drive_root,
@@ -703,13 +692,12 @@ def prepare_supervisor_runtime(
         append_jsonl=append_jsonl,
         enqueue_task=enqueue_task,
         cancel_task_by_id=cancel_task_by_id,
-        queue_review_task=queue_review_task,
         persist_queue_snapshot=persist_queue_snapshot,
         safe_restart=safe_restart,
         kill_workers=kill_workers,
         spawn_workers=spawn_workers,
         sort_pending=sort_pending,
-        consciousness=consciousness,
+        consciousness=None,
         request_restart=request_restart,
         dialogs_reply_tokens=dialogs_reply_tokens,
     )
@@ -731,7 +719,7 @@ def prepare_supervisor_runtime(
     if callable(set_task_terminal_hook):
         set_task_terminal_hook(_on_direct_chat_terminal)
 
-    return consciousness, event_ctx
+    return None, event_ctx
 
 
 def handle_runtime_inbound(*, source: str, message: InboundMessage, cursor: Any, ctx: Any) -> bool:
@@ -819,62 +807,6 @@ def _dispatch_runtime_inbound(*, message: InboundMessage, text: str, ctx: Any) -
             request_restart()
         return True
 
-    if lowered.startswith("/review"):
-        queue_review_task = getattr(ctx, "queue_review_task", None)
-        if callable(queue_review_task):
-            queue_review_task(reason="owner:/review", force=True)
-        return True
-
-    if lowered.startswith("/evolve"):
-        parts = lowered.split()
-        action = parts[1] if len(parts) > 1 else "on"
-        turn_on = action not in ("off", "stop", "0")
-
-        st = ctx.load_state()
-        st["evolution_mode_enabled"] = bool(turn_on)
-        if turn_on:
-            st["evolution_consecutive_failures"] = 0
-        ctx.save_state(st)
-
-        if not turn_on:
-            pending = getattr(ctx, "PENDING", [])
-            ctx.PENDING[:] = [t for t in pending if str(t.get("type")) != "evolution"]
-            sort_pending = getattr(ctx, "sort_pending", None)
-            persist_queue_snapshot = getattr(ctx, "persist_queue_snapshot", None)
-            if callable(sort_pending):
-                sort_pending()
-            if callable(persist_queue_snapshot):
-                persist_queue_snapshot(reason="evolve_off")
-
-        state_str = "ON" if turn_on else "OFF"
-        ctx.send_with_budget(chat_id, f"🧬 Evolution: {state_str}")
-        return True
-
-    if lowered.startswith("/bg"):
-        parts = lowered.split()
-        action = parts[1] if len(parts) > 1 else "status"
-
-        consciousness = getattr(ctx, "consciousness", None)
-        st = ctx.load_state()
-
-        if action in ("start", "on", "1"):
-            result = consciousness.start() if hasattr(consciousness, "start") else "⚠️ consciousness missing"
-            st["bg_consciousness_enabled"] = True
-            ctx.save_state(st)
-            ctx.send_with_budget(chat_id, f"🧠 {result}")
-            return True
-
-        if action in ("stop", "off", "0"):
-            result = consciousness.stop() if hasattr(consciousness, "stop") else "⚠️ consciousness missing"
-            st["bg_consciousness_enabled"] = False
-            ctx.save_state(st)
-            ctx.send_with_budget(chat_id, f"🧠 {result}")
-            return True
-
-        bg_status = "running" if getattr(consciousness, "is_running", False) else "stopped"
-        ctx.send_with_budget(chat_id, f"🧠 Background consciousness: {bg_status}")
-        return True
-
     if lowered.startswith("/status"):
         from supervisor.workers import WORKERS, PENDING, RUNNING
         soft_timeout = int(getattr(ctx, "soft_timeout", 600))
@@ -883,10 +815,6 @@ def _dispatch_runtime_inbound(*, message: InboundMessage, text: str, ctx: Any) -
         status = status_text(WORKERS, PENDING, RUNNING, soft_timeout, hard_timeout)
         ctx.send_with_budget(chat_id, status, force_budget=True)
         return True
-
-    consciousness = getattr(ctx, "consciousness", None)
-    if consciousness is not None:
-        consciousness.inject_observation(f"Owner message: {normalized[:100]}")
 
     get_chat_agent = getattr(ctx, "_get_chat_agent", None)
     if not callable(get_chat_agent):
@@ -899,13 +827,6 @@ def _dispatch_runtime_inbound(*, message: InboundMessage, text: str, ctx: Any) -
             return True
 
     def _run_and_resume(cid, txt):
-        try:
-            _dispatch_dialogs_direct_turn(ctx=ctx, chat_id=cid, text=txt)
-        finally:
-            if consciousness is not None and hasattr(consciousness, "resume"):
-                consciousness.resume()
-
-    if consciousness is not None and hasattr(consciousness, "pause"):
-        consciousness.pause()
+        _dispatch_dialogs_direct_turn(ctx=ctx, chat_id=cid, text=txt)
     threading.Thread(target=_run_and_resume, args=(chat_id, normalized), daemon=True).start()
     return True

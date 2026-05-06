@@ -126,6 +126,10 @@ def get_tools():
 
 def _handle_multi_model_review(ctx: ToolContext, content: str = "",
                                 prompt: str = "", models: list = None) -> str:
+    from ouroboros.config import auxiliary_llm_disabled
+    if auxiliary_llm_disabled():
+        return json.dumps({"error": "Review is disabled in basic/light runtime."}, ensure_ascii=False)
+
     if models is None:
         models = []
     try:
@@ -1141,6 +1145,10 @@ def _run_unified_review(ctx: ToolContext, commit_message: str,
     Returns None if commit may proceed. In blocking mode returns a blocking
     error string when review rejects the commit.
     """
+    from ouroboros.config import auxiliary_llm_disabled
+    if auxiliary_llm_disabled():
+        return "⚠️ REVIEW_BLOCKED: review is disabled in basic/light runtime."
+
     target_repo = repo_dir or ctx.repo_dir
     ctx._review_iteration_count += 1
     ctx._last_review_block_reason = ""  # reset per attempt

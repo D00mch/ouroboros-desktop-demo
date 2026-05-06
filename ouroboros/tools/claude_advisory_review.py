@@ -1270,6 +1270,10 @@ def _handle_advisory_pre_review(
     skip_tests: bool = False,
 ) -> str:
     """Run an advisory pre-commit review via Claude Agent SDK (read-only)."""
+    from ouroboros.config import auxiliary_llm_disabled
+    if auxiliary_llm_disabled():
+        return "Advisory review is disabled in basic/light runtime."
+
     repo_dir = pathlib.Path(ctx.repo_dir)
     drive_root = pathlib.Path(ctx.drive_root)
 

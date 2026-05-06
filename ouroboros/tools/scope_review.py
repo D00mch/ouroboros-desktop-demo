@@ -1015,6 +1015,22 @@ def run_scope_review(
     names (not synthetic strings), so callers can pass them directly into
     obligation tracking without any string parsing.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return ScopeReviewResult(
+                blocked=True,
+                block_message="⚠️ SCOPE_REVIEW_BLOCKED: review is disabled in basic/light runtime.",
+                critical_findings=[],
+                advisory_findings=[],
+                raw_text="",
+                model_id=_get_scope_model(),
+                status="omitted",
+                prompt_chars=0,
+            )
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     repo_dir = pathlib.Path(ctx.repo_dir)
     scope_model_id = _get_scope_model()
 

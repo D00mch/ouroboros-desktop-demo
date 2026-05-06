@@ -16,15 +16,32 @@ import time
 import copy
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ouroboros.provider_models import normalize_anthropic_model_id
+from ouroboros.provider_models import (
+    DEMO_LLM_CA_PATH,
+    DEMO_LLM_CERT_PATH,
+    DEMO_LLM_KEY_PATH,
+    DEMO_LLM_MODEL,
+    DEMO_LLM_URL,
+    DEMO_LLM_USAGE_MODEL,
+)
 
 log = logging.getLogger(__name__)
 
-DEFAULT_LIGHT_MODEL = "anthropic/claude-sonnet-4.6"
+DEFAULT_LIGHT_MODEL = DEMO_LLM_MODEL
 
 
 class LocalContextTooLargeError(RuntimeError):
     """Raised when a local model cannot fit context without silent truncation."""
+
+
+class DemoLLMHTTPError(RuntimeError):
+    """Raised for non-2xx responses from the demo GigaChat endpoint."""
+
+    def __init__(self, status_code: int, url: str, body: str):
+        self.status_code = status_code
+        self.url = url
+        self.body = body
+        super().__init__(f"Demo LLM HTTP {status_code} for {url}: {body}")
 
 
 def _estimate_message_chars(messages: List[Dict[str, Any]]) -> int:
@@ -321,79 +338,18 @@ class LLMClient:
         return f"openai-compatible/{resolved_model}"
 
     def _resolve_remote_target(self, model: str) -> Dict[str, Any]:
-        provider, resolved_model = self._parse_provider_model(model)
-        usage_model = self._qualified_model_name(provider, resolved_model)
-
-        if provider == "openai":
-            return {
-                "provider": provider,
-                "resolved_model": resolved_model,
-                "usage_model": usage_model,
-                "api_key": os.environ.get("OPENAI_API_KEY", ""),
-                "base_url": "https://api.openai.com/v1",
-                "default_headers": {},
-                "supports_openrouter_extensions": False,
-                "supports_generation_cost": False,
-            }
-
-        if provider == "anthropic":
-            resolved_model = normalize_anthropic_model_id(resolved_model)
-            return {
-                "provider": provider,
-                "resolved_model": resolved_model,
-                "usage_model": self._qualified_model_name(provider, resolved_model),
-                "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-                "base_url": "https://api.anthropic.com/v1",
-                "default_headers": {},
-                "supports_openrouter_extensions": False,
-                "supports_generation_cost": False,
-            }
-
-        if provider == "cloudru":
-            return {
-                "provider": provider,
-                "resolved_model": resolved_model,
-                "usage_model": usage_model,
-                "api_key": os.environ.get("CLOUDRU_FOUNDATION_MODELS_API_KEY", ""),
-                "base_url": (
-                    os.environ.get("CLOUDRU_FOUNDATION_MODELS_BASE_URL", "") or ""
-                ).strip() or "https://foundation-models.api.cloud.ru/v1",
-                "default_headers": {},
-                "supports_openrouter_extensions": False,
-                "supports_generation_cost": False,
-            }
-
-        if provider == "openai-compatible":
-            compatible_key = (os.environ.get("OPENAI_COMPATIBLE_API_KEY", "") or "").strip()
-            compatible_base_url = (os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "") or "").strip()
-            legacy_base_url = (os.environ.get("OPENAI_BASE_URL", "") or "").strip()
-            legacy_key = (os.environ.get("OPENAI_API_KEY", "") or "").strip()
-            return {
-                "provider": provider,
-                "resolved_model": resolved_model,
-                "usage_model": usage_model,
-                "api_key": compatible_key or legacy_key,
-                "base_url": compatible_base_url or legacy_base_url,
-                "default_headers": {},
-                "supports_openrouter_extensions": False,
-                "supports_generation_cost": False,
-            }
-
-        current_api_key = self._api_key_override
-        if current_api_key is None:
-            current_api_key = os.environ.get("OPENROUTER_API_KEY", "")
         return {
-            "provider": "openrouter",
-            "resolved_model": resolved_model,
-            "usage_model": usage_model,
-            "api_key": current_api_key,
-            "base_url": self._base_url,
-            "default_headers": {
-                "HTTP-Referer": "https://ouroboros.local/",
-                "X-Title": "Ouroboros",
-            },
-            "supports_openrouter_extensions": True,
-            "supports_generation_cost": True,
+            "provider": "gigachat-demo",
+            "resolved_model": DEMO_LLM_MODEL,
+            "usage_model": DEMO_LLM_USAGE_MODEL,
+            "api_key": "",
+            "base_url": DEMO_LLM_URL,
+            "cert_path": DEMO_LLM_CERT_PATH,
+            "key_path": DEMO_LLM_KEY_PATH,
+            "ca_path": DEMO_LLM_CA_PATH,
+            "default_headers": {},
+            "supports_openrouter_extensions": False,
+            "supports_generation_cost": False,
         }
 
     def _get_client(self):
@@ -488,6 +444,105 @@ class LLMClient:
                         block.pop("cache_control", None)
         return cleaned
 
+    @staticmethod
+    def _flatten_multipart_content(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert OpenAI multipart content arrays to plain strings.
+
+        The demo endpoint accepts OpenAI-style tools but the verified curl
+        examples use simple string message content. Ouroboros normally sends
+        multipart text blocks for prompt-cache metadata; flatten them before
+        calling this endpoint.
+        """
+        cleaned = copy.deepcopy(messages)
+        for msg in cleaned:
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            parts: List[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    if block:
+                        parts.append(block)
+                    continue
+                if not isinstance(block, dict):
+                    parts.append(str(block))
+                    continue
+                block_type = str(block.get("type") or "").strip()
+                if block_type in {"text", "input_text", "output_text"}:
+                    text = str(block.get("text") or "")
+                    if text:
+                        parts.append(text)
+                    continue
+                if block_type == "image_url":
+                    image_url = (block.get("image_url") or {}).get("url") or ""
+                    if image_url:
+                        parts.append(f"[image_url: {image_url}]")
+                    continue
+                text = block.get("text")
+                if text:
+                    parts.append(str(text))
+                else:
+                    block_copy = dict(block)
+                    block_copy.pop("cache_control", None)
+                    parts.append(json.dumps(block_copy, ensure_ascii=False))
+            msg["content"] = "\n\n".join(part for part in parts if part)
+        return cleaned
+
+    @staticmethod
+    def _normalize_gigachat_demo_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Normalize Ouroboros chat history for the stricter demo endpoint.
+
+        The backend rejects later system messages. It also only needs the
+        conversation as plain chat text because tool calls are returned as text
+        and parsed locally. Merge every system message into one leading system
+        message and render prior tool turns as ordinary text.
+        """
+        system_parts: List[str] = []
+        normalized: List[Dict[str, str]] = []
+
+        for msg in messages:
+            role = str(msg.get("role") or "").strip().lower()
+            raw_content = msg.get("content")
+            if isinstance(raw_content, str):
+                content = raw_content
+            elif raw_content is None:
+                content = ""
+            else:
+                content = json.dumps(raw_content, ensure_ascii=False)
+
+            if role == "system":
+                if content:
+                    system_parts.append(content)
+                continue
+
+            if role == "tool":
+                tool_id = str(msg.get("tool_call_id") or "").strip()
+                label = f"[Tool result{f' {tool_id}' if tool_id else ''}]"
+                normalized.append({"role": "user", "content": f"{label}\n{content}".strip()})
+                continue
+
+            if role == "assistant":
+                parts = [content] if content else []
+                for tool_call in msg.get("tool_calls") or []:
+                    function = tool_call.get("function") if isinstance(tool_call, dict) else {}
+                    parts.append(
+                        "[Tool call]\n" + json.dumps({
+                            "name": str((function or {}).get("name") or ""),
+                            "arguments": (function or {}).get("arguments") or "{}",
+                        }, ensure_ascii=False)
+                    )
+                normalized.append({"role": "assistant", "content": "\n\n".join(parts).strip()})
+                continue
+
+            normalized.append({
+                "role": "user" if role not in {"user", "assistant"} else role,
+                "content": content,
+            })
+
+        if not system_parts:
+            return normalized
+        return [{"role": "system", "content": "\n\n".join(system_parts)}] + normalized
+
     def _fetch_generation_cost(
         self,
         generation_id: str,
@@ -577,6 +632,18 @@ class LLMClient:
         if tools:
             raise ValueError("chat_async does not support tool calls")
         target = self._resolve_remote_target(model)
+        if target.get("provider") == "gigachat-demo":
+            return await asyncio.to_thread(
+                self._chat_gigachat_demo,
+                target,
+                messages,
+                tools,
+                reasoning_effort,
+                max_tokens,
+                tool_choice,
+                temperature,
+                no_proxy,
+            )
         if target.get("provider") == "anthropic":
             return await asyncio.to_thread(
                 self._chat_anthropic,
@@ -847,10 +914,23 @@ class LLMClient:
             r"^(?:\s*<tool_call>\s*\{.*?\}\s*</tool_call>\s*)+$",
             re.DOTALL,
         )
-        if not full_pattern.fullmatch(stripped):
-            return msg
-
-        matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
+        if full_pattern.fullmatch(stripped):
+            matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
+        else:
+            # The GigaChat demo endpoint can return a single tool call as a
+            # fenced JSON object rather than XML:
+            # ```json
+            # {"name": "...", "arguments": {...}}
+            # ```
+            fenced = re.fullmatch(
+                r"```(?:json)?\s*(\{.*\})\s*```",
+                stripped,
+                re.DOTALL | re.IGNORECASE,
+            )
+            raw_json = fenced.group(1).strip() if fenced else stripped
+            if not (raw_json.startswith("{") and raw_json.endswith("}")):
+                return msg
+            matches = [raw_json]
         if not matches:
             return msg
 
@@ -1331,6 +1411,9 @@ class LLMClient:
             # Strip cache_control from message content blocks — non-OpenRouter providers
             # (OpenAI, openai-compatible, Cloud.ru) do not accept this field.
             clean_messages = self._strip_cache_control(messages)
+            if str(target.get("provider") or "") == "gigachat-demo":
+                clean_messages = self._flatten_multipart_content(clean_messages)
+                clean_messages = self._normalize_gigachat_demo_messages(clean_messages)
             kwargs: Dict[str, Any] = {
                 "model": resolved_model,
                 "messages": clean_messages,
@@ -1464,6 +1547,85 @@ class LLMClient:
 
         return msg, usage
 
+    @staticmethod
+    def _expand_demo_cert_path(path_value: Any) -> str:
+        return os.path.expanduser(str(path_value or "").strip())
+
+    def _chat_gigachat_demo(
+        self,
+        target: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        reasoning_effort: str,
+        max_tokens: int,
+        tool_choice: str,
+        temperature: Optional[float] = None,
+        no_proxy: bool = False,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Call the demo GigaChat endpoint using the fixed mTLS certificate paths."""
+        import requests
+
+        cert_path = self._expand_demo_cert_path(target.get("cert_path"))
+        key_path = self._expand_demo_cert_path(target.get("key_path"))
+        missing = [path for path in (cert_path, key_path) if not path or not os.path.exists(path)]
+        if missing:
+            raise RuntimeError(
+                "Demo LLM certificate files are missing: "
+                + ", ".join(missing)
+                + ". Expected server-side files at ~/crt/giga.pem and ~/crt/giga.key."
+            )
+
+        # Keep the shared demo endpoint conservative. Tool schemas and huge
+        # completion budgets amplify traffic and can exhaust the provider's
+        # short rate-limit window during a single task retry sequence.
+        demo_max_tokens = min(max_tokens, 4096)
+        payload = self._build_remote_kwargs(
+            target, messages, reasoning_effort, demo_max_tokens, tool_choice, temperature, None
+        )
+        try:
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+
+        def _post(payload_obj: Dict[str, Any]) -> Dict[str, Any]:
+            request_kwargs = {
+                "headers": {"Content-Type": "application/json"},
+                "json": payload_obj,
+                "cert": (cert_path, key_path),
+                "verify": False,
+                "timeout": 120,
+            }
+            url = str(target.get("base_url") or DEMO_LLM_URL)
+            if no_proxy:
+                with requests.Session() as session:
+                    session.trust_env = False
+                    response = session.post(url, **request_kwargs)
+            else:
+                response = requests.post(url, **request_kwargs)
+            if response.status_code >= 400:
+                body = response.text[:2000]
+                raise DemoLLMHTTPError(response.status_code, url, body)
+            return response.json()
+
+        resp_dict = _post(payload)
+        msg, usage = self._normalize_remote_response(resp_dict, target, skip_cost_fetch=True)
+        choices = resp_dict.get("choices") or []
+        if choices:
+            finish_reason = (choices[0] or {}).get("finish_reason")
+            if finish_reason is not None:
+                msg = dict(msg)
+                msg["finish_reason"] = finish_reason
+        if not msg.get("tool_calls") and msg.get("content") and tools:
+            allowed_tool_names = {
+                str(t.get("function", {}).get("name", "")).strip()
+                for t in self._sanitize_chat_completion_tools(tools)
+                if isinstance(t, dict)
+            }
+            msg = self._parse_tool_calls_from_content(msg, allowed_tool_names)
+        return msg, usage
+
     def _chat_remote(
         self,
         target: Dict[str, Any],
@@ -1483,6 +1645,12 @@ class LLMClient:
         closed in a finally block after the response is received to avoid
         connection-pool leaks.  This flag does not affect other callers.
         """
+        if target.get("provider") == "gigachat-demo":
+            return self._chat_gigachat_demo(
+                target, messages, tools, reasoning_effort, max_tokens, tool_choice, temperature,
+                no_proxy=no_proxy,
+            )
+
         if target.get("provider") == "anthropic":
             return self._chat_anthropic(
                 target, messages, tools, reasoning_effort, max_tokens, tool_choice, temperature,
@@ -1600,17 +1768,9 @@ class LLMClient:
         return text, usage
 
     def default_model(self) -> str:
-        """Return the single default model from env. LLM switches via tool if needed."""
-        return os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
+        """Return the single hardcoded demo model."""
+        return DEMO_LLM_MODEL
 
     def available_models(self) -> List[str]:
-        """Return list of available models from env (for switch_model tool schema)."""
-        main = os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
-        code = os.environ.get("OUROBOROS_MODEL_CODE", "")
-        light = os.environ.get("OUROBOROS_MODEL_LIGHT", "")
-        models = [main]
-        if code and code != main:
-            models.append(code)
-        if light and light != main and light != code:
-            models.append(light)
-        return models
+        """Return the single hardcoded demo model."""
+        return [DEMO_LLM_MODEL]

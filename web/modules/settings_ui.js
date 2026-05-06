@@ -86,107 +86,36 @@ export function renderSettingsPage() {
             <div class="settings-scroll">
                 <section class="settings-panel active" data-settings-panel="providers">
                     <div class="settings-section-copy">
-                        Configure remote providers and the optional network gate. Secret fields now have explicit
-                        <code>Clear</code> actions so masked values can be removed intentionally.
+                        Demo runtime is fixed to the internal GigaChat endpoint. No API keys or provider setup are
+                        collected by this build.
                     </div>
                     ${providerCard({
-                        id: 'openrouter',
-                        title: 'OpenRouter',
-                        icon: '/static/providers/openrouter.ico',
-                        hint: 'Default multi-model router',
+                        id: 'gigachat-demo',
+                        title: 'GigaChat Demo',
+                        icon: '',
+                        hint: 'Hardcoded mTLS runtime',
                         open: true,
-                        body: `<div class="form-row">${secretField({
-                            id: 's-openrouter',
-                            settingKey: 'OPENROUTER_API_KEY',
-                            label: 'OpenRouter API Key',
-                            placeholder: 'sk-or-...',
-                        })}</div>`,
-                    })}
-                    ${providerCard({
-                        id: 'openai',
-                        title: 'OpenAI',
-                        icon: '/static/providers/openai.svg',
-                        hint: 'Official OpenAI API',
                         body: `
-                            <div class="form-row">${secretField({
-                                id: 's-openai',
-                                settingKey: 'OPENAI_API_KEY',
-                                label: 'OpenAI API Key',
-                                placeholder: 'sk-...',
-                            })}</div>
-                            <div class="settings-inline-note">Use model values like <code>openai::gpt-5.5</code> in the Models tab to route models directly here. If OpenRouter is absent and the shipped defaults are still untouched, Ouroboros auto-remaps them to official OpenAI defaults.</div>
-                        `,
-                    })}
-                    ${providerCard({
-                        id: 'compatible',
-                        title: 'OpenAI Compatible',
-                        icon: '/static/providers/openai-compatible.svg',
-                        hint: 'Custom OpenAI-style endpoint',
-                        body: `
-                            <div class="form-row">
-                                ${secretField({
-                                    id: 's-openai-compatible-key',
-                                    settingKey: 'OPENAI_COMPATIBLE_API_KEY',
-                                    label: 'API Key',
-                                    placeholder: 'Compatible provider key',
-                                })}
-                                <div class="form-field">
-                                    <label>Base URL</label>
-                                    <input id="s-openai-compatible-base-url" placeholder="https://provider.example/v1">
-                                </div>
-                            </div>
-                            <div class="settings-inline-note">Use this card for custom base URLs. Built-in web search only works with the official OpenAI Responses API, so keep <code>OPENAI_BASE_URL</code> empty when you want <code>web_search</code>.</div>
-                        `,
-                    })}
-                    ${providerCard({
-                        id: 'cloudru',
-                        title: 'Cloud.ru Foundation Models',
-                        icon: '/static/providers/cloudru.svg',
-                        hint: 'Cloud.ru OpenAI-compatible runtime',
-                        body: `
-                            <div class="form-row">
-                                ${secretField({
-                                    id: 's-cloudru-key',
-                                    settingKey: 'CLOUDRU_FOUNDATION_MODELS_API_KEY',
-                                    label: 'API Key',
-                                    placeholder: 'Cloud.ru Foundation Models API key',
-                                })}
-                                <div class="form-field">
-                                    <label>Base URL</label>
-                                    <input id="s-cloudru-base-url" placeholder="https://foundation-models.api.cloud.ru/v1">
-                                </div>
+                            <div class="settings-inline-note">
+                                Requests go to <code>https://gigachat-ift.sberdevices.delta.sbrf.ru/v1/chat/completions</code>
+                                with model <code>glm-5.1</code>. The server must provide
+                                <code>~/crt/giga.pem</code>, <code>~/crt/giga.key</code>, and <code>~/crt/cp.pem</code>.
                             </div>
                         `,
                     })}
-                    ${providerCard({
-                        id: 'anthropic',
-                        title: 'Anthropic',
-                        icon: '/static/providers/anthropic.png',
-                        hint: 'Direct runtime plus Claude tooling',
-                        body: `
-                            <div class="form-row">${secretField({
-                                id: 's-anthropic',
-                                settingKey: 'ANTHROPIC_API_KEY',
-                                label: 'Anthropic API Key',
-                                placeholder: 'sk-ant-...',
-                            })}</div>
-                            <div class="settings-inline-note">Use model values like <code>anthropic::claude-sonnet-4-6</code> in the Models tab to route models directly through Anthropic. Claude tooling still reuses this key.</div>
-                            <div class="settings-toolbar" id="settings-claude-code-panel" hidden>
-                                <button type="button" class="settings-ghost-btn" id="btn-claude-code-install">Repair Runtime</button>
-                                <span id="settings-claude-code-status" class="settings-inline-status">Checking Claude runtime...</span>
-                            </div>
-                            <div class="settings-inline-note" id="settings-claude-code-copy" hidden>Claude runtime powers delegated code editing and advisory review. It is managed automatically by the app.</div>
-                        `,
-                    })}
-                    <div class="form-section compact">
-                        <h3>Legacy Compatibility</h3>
-                        <div class="form-row">
-                            <div class="form-field">
-                                <label>Legacy OpenAI Base URL</label>
-                                <input id="s-openai-base-url" placeholder="https://api.openai.com/v1 or compatible endpoint">
-                            </div>
-                        </div>
-                        <div class="settings-inline-note">Backward-compatibility escape hatch for older installs. For new custom providers, use the dedicated <code>OpenAI Compatible</code> card instead.</div>
+                    <div hidden>
+                        <input id="s-openrouter" value="">
+                        <input id="s-openai" value="">
+                        <input id="s-openai-base-url" value="">
+                        <input id="s-openai-compatible-key" value="">
+                        <input id="s-openai-compatible-base-url" value="">
+                        <input id="s-cloudru-key" value="">
+                        <input id="s-cloudru-base-url" value="">
+                        <input id="s-anthropic" value="">
+                        <div id="settings-claude-code-panel"></div>
+                        <button type="button" id="btn-claude-code-install"></button>
+                        <span id="settings-claude-code-status"></span>
+                        <div id="settings-claude-code-copy"></div>
                     </div>
                     <div class="form-section compact">
                         <h3>Network Gate</h3>
@@ -203,51 +132,30 @@ export function renderSettingsPage() {
 
                 <section class="settings-panel" data-settings-panel="models">
                     <div class="form-section">
-                        <h3>Model Routing</h3>
+                        <h3>Demo Model</h3>
                         <div class="settings-section-copy">
-                            These fields are cloud model IDs. Enable <code>Local</code> to route that model
-                            through the GGUF server configured in Advanced.
+                            Model routing is disabled in this demo build. All task, code, light, fallback,
+                            review, and scope-review lanes use <code>glm-5.1</code>.
                         </div>
-                        <div class="settings-toolbar">
-                            <button type="button" class="settings-ghost-btn" id="btn-refresh-model-catalog">Refresh Model Catalog</button>
-                            <span id="settings-model-catalog-status" class="settings-inline-status">Model catalog is optional and failure-tolerant.</span>
+                        <div class="panel-card">
+                            <h3>Active runtime</h3>
+                            <p><code>glm-5.1</code> via the fixed GigaChat mTLS endpoint.</p>
+                            <span id="settings-model-catalog-status" class="settings-inline-status">Model catalog disabled for demo runtime.</span>
+                            <button type="button" class="settings-ghost-btn" id="btn-refresh-model-catalog" hidden>Refresh Model Catalog</button>
                         </div>
-                        <div class="settings-model-grid">
-                            ${modelCard({ title: 'Main', copy: 'Primary reasoning model.', inputId: 's-model', toggleId: 's-local-main', defaultValue: 'anthropic/claude-opus-4.7' })}
-                            ${modelCard({ title: 'Code', copy: 'Tool-heavy coding model.', inputId: 's-model-code', toggleId: 's-local-code', defaultValue: 'anthropic/claude-opus-4.7' })}
-                            ${modelCard({ title: 'Light', copy: 'Fast summaries and lightweight tasks.', inputId: 's-model-light', toggleId: 's-local-light', defaultValue: 'anthropic/claude-sonnet-4.6' })}
-                            ${modelCard({ title: 'Fallback', copy: 'Resilience and degraded path.', inputId: 's-model-fallback', toggleId: 's-local-fallback', defaultValue: 'anthropic/claude-sonnet-4.6' })}
-                        </div>
-                        <div class="form-row">
-                            <div class="form-field">
-                                <label>Claude Code Model</label>
-                                <input id="s-claude-code-model" value="claude-opus-4-7[1m]" placeholder="sonnet, opus, claude-opus-4-7[1m], or full name">
-                                <div class="settings-inline-note">Anthropic model for <code>claude_code_edit</code> and <code>advisory_pre_review</code> tools. Requires Anthropic key in Providers.</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>Review Models</h3>
-                        <div class="settings-section-copy">Models used by the pre-commit review gate. Runs automatically on every <code>repo_commit</code>.</div>
-                        <div class="form-row">
-                            <div class="form-field">
-                                <label>Pre-commit Review Models</label>
-                                <input id="s-review-models" placeholder="model1,model2,model3">
-                                <div class="settings-inline-note">Comma-separated review models (triad). In OpenAI-only or Anthropic-only direct-provider mode, the list is auto-normalized to [main, light, light] (3 slots, 2 unique) so both the commit triad and plan_task (which requires >=2 distinct models for majority-vote) work out of the box. OpenAI-compatible and Cloud.ru setups are not auto-normalized and must configure the list explicitly.</div>
-                            </div>
-                        </div>
-                        <div class="form-grid two">
-                            <div class="form-field">
-                                <label>Scope Review Model</label>
-                                <input id="s-scope-review-model" placeholder="openai/gpt-5.5">
-                                <div class="settings-inline-note">Single model for the blocking scope reviewer. Runs in parallel with the triad diff review.</div>
-                            </div>
-                            <div class="form-field">
-                                <label>Web Search Model</label>
-                                <input id="s-websearch-model" placeholder="gpt-5.2">
-                                <div class="settings-inline-note">OpenAI model for <code>web_search</code>. Requires <code>OPENAI_API_KEY</code> and an empty Legacy Base URL.</div>
-                            </div>
+                        <div hidden>
+                            <input id="s-model" value="glm-5.1">
+                            <input id="s-model-code" value="glm-5.1">
+                            <input id="s-model-light" value="glm-5.1">
+                            <input id="s-model-fallback" value="glm-5.1">
+                            <input id="s-claude-code-model" value="">
+                            <input id="s-review-models" value="glm-5.1,glm-5.1,glm-5.1">
+                            <input id="s-scope-review-model" value="glm-5.1">
+                            <input id="s-websearch-model" value="">
+                            <input type="checkbox" id="s-local-main">
+                            <input type="checkbox" id="s-local-code">
+                            <input type="checkbox" id="s-local-light">
+                            <input type="checkbox" id="s-local-fallback">
                         </div>
                     </div>
                 </section>
@@ -465,48 +373,20 @@ export function renderSettingsPage() {
                 </section>
 
                 <section class="settings-panel" data-settings-panel="advanced">
-                    <div class="form-section">
-                        <h3>Local Model Runtime</h3>
-                        <div class="settings-section-copy">Only fill this in when you want Ouroboros to start and route to a GGUF model on this machine.</div>
-                        <div class="form-grid two">
-                            <div class="form-field">
-                                <label>Model Source</label>
-                                <input id="s-local-source" placeholder="bartowski/Llama-3.3-70B-Instruct-GGUF or /path/to/model.gguf">
-                            </div>
-                            <div class="form-field">
-                                <label>GGUF Filename (for HF repos)</label>
-                                <input id="s-local-filename" placeholder="Llama-3.3-70B-Instruct-Q4_K_M.gguf">
-                            </div>
-                        </div>
-                        <div class="form-grid four">
-                            <div class="form-field">
-                                <label>Port</label>
-                                <input id="s-local-port" type="number" value="8766">
-                            </div>
-                            <div class="form-field">
-                                <label>GPU Layers (-1 = all)</label>
-                                <input id="s-local-gpu-layers" type="number" value="-1">
-                            </div>
-                            <div class="form-field">
-                                <label>Context Length</label>
-                                <input id="s-local-ctx" type="number" value="16384">
-                            </div>
-                            <div class="form-field">
-                                <label>Chat Format</label>
-                                <input id="s-local-chat-format" placeholder="auto-detect">
-                            </div>
-                        </div>
-                        <div class="settings-toolbar">
-                            <button class="btn btn-primary" id="btn-local-start">Start</button>
-                            <button class="btn btn-primary" id="btn-local-stop">Stop</button>
-                            <button class="btn btn-primary" id="btn-local-test">Test Tool Calling</button>
-                        </div>
-                        <div id="local-model-status" class="settings-inline-status">Status: Offline</div>
-                        <div id="local-model-progress-wrap" class="local-model-progress-wrap local-model-hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                            <div id="local-model-progress-bar" class="local-model-progress-bar"></div>
-                        </div>
-                        <button class="btn btn-secondary local-model-install-btn local-model-hidden" id="btn-local-install-runtime">Install Local Runtime</button>
-                        <div id="local-model-test-result" class="settings-test-result"></div>
+                    <div hidden>
+                        <input id="s-local-source" value="">
+                        <input id="s-local-filename" value="">
+                        <input id="s-local-port" type="number" value="8766">
+                        <input id="s-local-gpu-layers" type="number" value="0">
+                        <input id="s-local-ctx" type="number" value="16384">
+                        <input id="s-local-chat-format" value="">
+                        <button type="button" id="btn-local-start"></button>
+                        <button type="button" id="btn-local-stop"></button>
+                        <button type="button" id="btn-local-test"></button>
+                        <button type="button" id="btn-local-install-runtime"></button>
+                        <div id="local-model-status"></div>
+                        <div id="local-model-progress-wrap"><div id="local-model-progress-bar"></div></div>
+                        <div id="local-model-test-result"></div>
                     </div>
 
                     <div class="form-section">

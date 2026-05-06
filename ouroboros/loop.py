@@ -517,7 +517,7 @@ def run_llm_loop(
     Core LLM-with-tools loop.
 
     Sends messages to LLM, executes tool calls, retries on errors.
-    LLM controls model/effort via switch_model tool (LLM-first, Bible P5).
+    Demo runtime uses the single hardcoded LLM model.
 
     Returns: (final_text, accumulated_usage, llm_trace)
     """
@@ -665,8 +665,9 @@ def run_llm_loop(
                 fallback_model = os.environ.get("OUROBOROS_MODEL_FALLBACK", "").strip()
                 if not fallback_model or fallback_model == active_model:
                     local_tag = " (local)" if active_use_local else ""
+                    attempts = int(accumulated_usage.get("_last_llm_attempts") or max_retries)
                     return (
-                        f"⚠️ Failed to get a response from model {active_model}{local_tag} after {max_retries} attempts. "
+                        f"⚠️ Failed to get a response from model {active_model}{local_tag} after {attempts} attempts. "
                         f"No viable fallback model configured.{_provider_failure_hint(accumulated_usage)} "
                         f"If background consciousness is running, it will retry when the provider recovers."
                     ), accumulated_usage, llm_trace

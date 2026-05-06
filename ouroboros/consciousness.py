@@ -112,6 +112,15 @@ class BackgroundConsciousness:
         }
 
     def start(self) -> str:
+        try:
+            from ouroboros.config import auxiliary_llm_disabled
+            if auxiliary_llm_disabled():
+                self._running = False
+                self._last_idle_reason = "disabled"
+                return "Background consciousness disabled in basic/light runtime."
+        except Exception:
+            log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
         if self.is_running:
             return "Background consciousness is already running."
         self._running = True
@@ -248,6 +257,14 @@ class BackgroundConsciousness:
         (e.g. context overflow).  _loop() uses this to set a distinct status
         instead of overwriting last_idle_reason with 'sleeping'.
         """
+        try:
+            from ouroboros.config import auxiliary_llm_disabled
+            if auxiliary_llm_disabled():
+                self._last_idle_reason = "disabled"
+                return False
+        except Exception:
+            log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
         try:
             context = self._build_context()
         except OverflowError as exc:

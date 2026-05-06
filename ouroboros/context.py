@@ -318,41 +318,12 @@ def build_recent_sections(memory: Memory, env: Any, task_id: str = "") -> List[s
     if supervisor_summary:
         sections.append("## Supervisor\n\n" + supervisor_summary)
 
-    reflections_entries = memory.read_jsonl_tail("task_reflections.jsonl", 20)
-    reflections_text = _format_recent_reflections(reflections_entries, limit=10)
-    if reflections_text:
-        sections.append("## Execution reflections\n\n" + reflections_text)
-
     return sections
 
 
 def _collect_log_analysis_checks(env: Any, checks: List[str]) -> None:
     import hashlib
     import time as _time
-
-    try:
-        from ouroboros.consciousness import BackgroundConsciousness
-        consciousness_md = safe_read(env.repo_path("prompts/CONSCIOUSNESS.md"))
-        if consciousness_md:
-            whitelist = BackgroundConsciousness._BG_TOOL_WHITELIST
-            scan_text = re.sub(r'```.*?```', '', consciousness_md, flags=re.DOTALL)
-            tool_prefixes = (
-                "schedule_", "update_", "knowledge_", "browse_", "analyze_",
-                "web_", "send_", "repo_", "data_", "chat_", "list_", "get_",
-                "wait_", "set_", "memory_",
-            )
-            prompt_tool_refs = {
-                match.group(1)
-                for match in re.finditer(r'\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b', scan_text)
-                if match.group(1) in whitelist or any(match.group(1).startswith(prefix) for prefix in tool_prefixes)
-            }
-            phantom = prompt_tool_refs - whitelist
-            if phantom:
-                checks.append(f"WARNING: PROMPT-RUNTIME DRIFT — CONSCIOUSNESS.md references tools not in BG whitelist: {', '.join(sorted(phantom))}")
-            else:
-                checks.append("OK: prompt-runtime sync (no phantom tools)")
-    except Exception:
-        pass
 
     try:
         msg_hash_to_tasks: Dict[str, set] = {}
