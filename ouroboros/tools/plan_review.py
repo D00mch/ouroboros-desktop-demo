@@ -27,7 +27,6 @@ import logging
 import os
 from pathlib import Path
 
-from ouroboros import gigachat as gigachat_runtime
 from ouroboros.llm import LLMClient
 from ouroboros.tools.registry import ToolContext, ToolEntry
 from ouroboros.tools.review_helpers import (
@@ -179,7 +178,6 @@ async def _run_plan_review_async(
 
     raw_env = _os.environ.get("OUROBOROS_REVIEW_MODELS", "") or ""
     raw_user_list = [m.strip() for m in raw_env.split(",") if m.strip()]
-    resolved_models = list(_cfg.get_review_models() or [])
     # The "no user-authored duplicates" rule must NOT fire when the raw env
     # contains exactly the auto-generated direct-provider fallback shape
     # (`[main, light, light]` or legacy `[main] * N`) — that payload is
@@ -198,14 +196,9 @@ async def _run_plan_review_async(
     is_auto_generated_fallback = bool(
         fallback_shape and raw_user_list == fallback_shape
     )
-    is_demo_runtime_triad = bool(
-        raw_user_list and raw_user_list == gigachat_runtime.demo_review_models()
-        and resolved_models == gigachat_runtime.demo_review_models()
-    )
     if (
         raw_user_list
         and not is_auto_generated_fallback
-        and not is_demo_runtime_triad
         and len(set(raw_user_list)) != len(raw_user_list)
     ):
         duplicates = sorted({
@@ -218,6 +211,7 @@ async def _run_plan_review_async(
             "Fix the setting so each model appears exactly once."
         )
 
+    resolved_models = list(_cfg.get_review_models() or [])
     if not resolved_models:
         return (
             "ERROR: No review models configured. Set OUROBOROS_REVIEW_MODELS "
@@ -226,7 +220,7 @@ async def _run_plan_review_async(
 
     unique_resolved = list(dict.fromkeys(resolved_models))
     # Majority-vote coordination requires >=2 distinct reviewers.
-    if len(unique_resolved) < 2 and not is_demo_runtime_triad:
+    if len(unique_resolved) < 2:
         single_provider_hint = ""
         if (
             resolved_models
@@ -255,11 +249,7 @@ async def _run_plan_review_async(
     # from direct-provider fallback) and corrupt majority-vote coordination.
     # Running 2 unique reviewers is stricter and produces a sound majority;
     # the docs promise "2-3 unique reviewers".
-    models = (
-        list(_get_review_models())
-        if is_demo_runtime_triad
-        else list(dict.fromkeys(_get_review_models()))
-    )
+    models = list(dict.fromkeys(_get_review_models()))
 
     # --- Build prompt components ---
     checklist = _load_plan_checklist()

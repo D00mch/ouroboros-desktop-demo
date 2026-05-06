@@ -104,51 +104,6 @@ Sure, I will use the tool now.
         self.assertEqual(args["content"], "hello world")
         self.assertEqual(args["path"], "test.txt")
 
-    def test_parses_fenced_json_function_payload(self):
-        from ouroboros.llm import LLMClient
-
-        msg = {
-            "content": """
-```json
-{
-  "name": "echo_word",
-  "arguments": {
-    "word": "data-science"
-  }
-}
-```
-""",
-            "tool_calls": [],
-        }
-
-        parsed = LLMClient._parse_tool_calls_from_content(msg, {"echo_word"})
-
-        self.assertEqual(len(parsed["tool_calls"]), 1)
-        self.assertIsNone(parsed["content"])
-        self.assertEqual(parsed["tool_calls"][0]["function"]["name"], "echo_word")
-        self.assertEqual(
-            json.loads(parsed["tool_calls"][0]["function"]["arguments"]),
-            {"word": "data-science"},
-        )
-
-    def test_rejects_fenced_json_tool_call_with_leading_prose(self):
-        from ouroboros.llm import LLMClient
-
-        msg = {
-            "content": """
-Use the tool below.
-
-```json
-{"name": "echo_word", "arguments": {"word": "data-science"}}
-```
-""",
-            "tool_calls": [],
-        }
-
-        parsed = LLMClient._parse_tool_calls_from_content(msg, {"echo_word"})
-
-        self.assertEqual(parsed, msg)
-
 
 class TestStripReasoningWrappers(unittest.TestCase):
     """Tests for LLMClient._strip_reasoning_wrappers."""

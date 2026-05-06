@@ -6,7 +6,6 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from ouroboros import gigachat as gigachat_runtime
 from ouroboros.provider_models import (
     ANTHROPIC_DIRECT_DEFAULTS,
     OPENAI_DIRECT_DEFAULTS,
@@ -47,14 +46,6 @@ _SCOPE_REVIEW_LEGACY_DEFAULTS = frozenset({
     "openai/gpt-5.4-pro",
     "openai::gpt-5.4-pro",
 })
-_TRADITIONAL_REMOTE_PROVIDER_KEYS = (
-    "OPENROUTER_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "OPENAI_COMPATIBLE_API_KEY",
-    "CLOUDRU_FOUNDATION_MODELS_API_KEY",
-)
-_DEMO_RUNTIME_DEFAULTS = gigachat_runtime.demo_settings_defaults()
 
 
 def _truthy_setting(value) -> bool:
@@ -91,31 +82,6 @@ def _exclusive_direct_remote_provider(settings: dict) -> str:
     if has_anthropic and not has_official_openai:
         return "anthropic"
     return ""
-
-
-def _has_traditional_remote_provider(settings: dict) -> bool:
-    return any(_setting_text(settings, key) for key in _TRADITIONAL_REMOTE_PROVIDER_KEYS)
-
-
-def _apply_demo_runtime_defaults(settings: dict) -> tuple[dict, list[str]]:
-    normalized = dict(settings)
-    if not gigachat_runtime.runtime_available():
-        return normalized, []
-    if _has_traditional_remote_provider(normalized):
-        return normalized, []
-    if has_local_model_source(normalized) or has_local_routing(normalized):
-        return normalized, []
-
-    changed_keys: list[str] = []
-    for key, demo_value in _DEMO_RUNTIME_DEFAULTS.items():
-        current = _setting_text(normalized, key)
-        default = _setting_text(SETTINGS_DEFAULTS, key)
-        if current not in {"", default}:
-            continue
-        if current != demo_value:
-            normalized[key] = demo_value
-            changed_keys.append(key)
-    return normalized, changed_keys
 
 
 def _normalize_direct_review_models(settings: dict, provider: str) -> str:
@@ -217,7 +183,16 @@ def classify_runtime_provider_change(before: dict, after: dict) -> str:
 
 def has_remote_provider(settings: dict) -> bool:
     """Return True when any supported remote-provider credential is configured."""
-    return _has_traditional_remote_provider(settings) or gigachat_runtime.runtime_available()
+    return any(
+        str(settings.get(key, "") or "").strip()
+        for key in (
+            "OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_COMPATIBLE_API_KEY",
+            "CLOUDRU_FOUNDATION_MODELS_API_KEY",
+        )
+    )
 
 
 def has_local_model_source(settings: dict) -> bool:
@@ -249,12 +224,12 @@ def has_supervisor_provider(settings: dict) -> bool:
 def apply_runtime_provider_defaults(settings: dict) -> tuple[dict, bool, list[str]]:
     """Auto-fill safe runtime defaults for the agreed provider cases."""
     normalized = dict(settings)
-    normalized, changed_keys = _apply_demo_runtime_defaults(normalized)
     provider = _exclusive_direct_remote_provider(normalized)
 
     if not provider:
-        return normalized, bool(changed_keys), changed_keys
+        return normalized, False, []
 
+    changed_keys: list[str] = []
     provider_defaults = _DIRECT_PROVIDER_AUTO_DEFAULTS[provider]
     for key in _ALL_MODEL_SLOT_KEYS:
         raw_current = _setting_text(normalized, key)

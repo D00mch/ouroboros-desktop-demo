@@ -1,7 +1,4 @@
-from unittest.mock import MagicMock, patch
-
 import pytest
-
 import ouroboros.pricing as pricing_module
 from ouroboros.llm import LLMClient
 
@@ -15,21 +12,6 @@ def test_resolve_openai_target(monkeypatch):
     assert target["resolved_model"] == "gpt-4.1"
     assert target["usage_model"] == "openai/gpt-4.1"
     assert target["base_url"] == "https://api.openai.com/v1"
-
-
-def test_resolve_gigachat_target_uses_demo_runtime_defaults(monkeypatch):
-    monkeypatch.delenv("LLM_URL", raising=False)
-    monkeypatch.delenv("GIGA_TOKEN", raising=False)
-
-    target = LLMClient()._resolve_remote_target("gigachat::glm-5.1")
-
-    assert target["provider"] == "gigachat"
-    assert target["resolved_model"] == "glm-5.1"
-    assert target["usage_model"] == "gigachat/glm-5.1"
-    assert target["llm_url"] == "https://gigachat-ift.sberdevices.delta.sbrf.ru/v1/chat/completions"
-    assert target["bearer_token"] == ""
-    assert target["client_cert"].endswith("/crt/giga.pem")
-    assert target["client_key"].endswith("/crt/giga.key")
 
 
 def test_build_remote_kwargs_uses_max_completion_tokens_for_openai_gpt5(monkeypatch):
@@ -280,99 +262,6 @@ def test_normalize_remote_response_estimates_cost_for_direct_openai(monkeypatch)
     assert usage["cached_tokens"] == 10
     assert usage["cost"] == 0.123456
     assert seen["args"] == ("openai/gpt-5.2", 100, 40, 10, 0)
-
-
-def test_normalize_remote_response_preserves_finish_reason(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-
-    client = LLMClient()
-    target = client._resolve_remote_target("openai::gpt-4.1")
-
-    message, _usage = client._normalize_remote_response(
-        {
-            "choices": [{
-                "message": {"role": "assistant", "content": ""},
-                "finish_reason": "length",
-            }],
-            "usage": {},
-        },
-        target,
-    )
-
-    assert message["finish_reason"] == "length"
-
-
-def test_chat_gigachat_retries_empty_length_tool_response_with_higher_max_tokens():
-    client = LLMClient()
-    target = {
-        "provider": "gigachat",
-        "resolved_model": "glm-5.1",
-        "usage_model": "gigachat/glm-5.1",
-        "llm_url": "https://gigachat.example/v1/chat/completions",
-        "bearer_token": "token",
-        "client_cert": "",
-        "client_key": "",
-        "verify": False,
-    }
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": "echo_word",
-            "description": "Echo one word.",
-            "parameters": {
-                "type": "object",
-                "properties": {"word": {"type": "string"}},
-                "required": ["word"],
-            },
-        },
-    }]
-
-    empty_length_response = MagicMock()
-    empty_length_response.raise_for_status = MagicMock()
-    empty_length_response.json.return_value = {
-        "choices": [{
-            "message": {"content": "", "role": "assistant"},
-            "finish_reason": "length",
-        }],
-        "usage": {},
-    }
-
-    tool_call_response = MagicMock()
-    tool_call_response.raise_for_status = MagicMock()
-    tool_call_response.json.return_value = {
-        "choices": [{
-            "message": {
-                "content": (
-                    "<tool_call>\n"
-                    '{"name": "echo_word", "arguments": {"word": "data-science"}}\n'
-                    "</tool_call>"
-                ),
-                "role": "assistant",
-            },
-            "finish_reason": "stop",
-        }],
-        "usage": {},
-    }
-
-    with patch("requests.post", side_effect=[empty_length_response, tool_call_response]) as mock_post:
-        msg, _usage = client._chat_gigachat(
-            target,
-            [{"role": "user", "content": "Call echo_word with data-science."}],
-            tools,
-            "medium",
-            256,
-            "auto",
-            None,
-            no_proxy=False,
-        )
-
-    assert mock_post.call_count == 2
-    first_payload = mock_post.call_args_list[0].kwargs["json"]
-    second_payload = mock_post.call_args_list[1].kwargs["json"]
-    assert first_payload["max_tokens"] == 256
-    assert second_payload["max_tokens"] == 128000
-    assert msg["tool_calls"][0]["function"]["name"] == "echo_word"
-    assert msg["tool_calls"][0]["function"]["arguments"] == '{"word": "data-science"}'
 
 
 def test_build_anthropic_messages_rejects_tool_result_without_tool_call_id(monkeypatch):

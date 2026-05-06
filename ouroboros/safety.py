@@ -36,7 +36,6 @@ import re
 import shlex
 from typing import Tuple, Dict, Any, List, Optional
 
-from ouroboros import gigachat as gigachat_runtime
 from ouroboros.llm import LLMClient, DEFAULT_LIGHT_MODEL
 from ouroboros.pricing import emit_llm_usage_event, estimate_cost, infer_provider_from_model
 from supervisor.state import update_budget_from_usage
@@ -482,10 +481,7 @@ _PROVIDER_KEY_ENV = {
 
 
 def _any_remote_provider_configured() -> bool:
-    return (
-        any(str(os.environ.get(k, "") or "").strip() for k in _REMOTE_PROVIDER_KEYS)
-        or gigachat_runtime.runtime_available()
-    )
+    return any(str(os.environ.get(k, "") or "").strip() for k in _REMOTE_PROVIDER_KEYS)
 
 
 def _any_local_routing_enabled() -> bool:
