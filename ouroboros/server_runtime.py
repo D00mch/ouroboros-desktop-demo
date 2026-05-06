@@ -11,7 +11,6 @@ from ouroboros.provider_models import (
     OPENAI_DIRECT_DEFAULTS,
     migrate_model_value,
 )
-from ouroboros.demo_llm import DEFAULT_LLM_URL, DEMO_LLM_MODEL
 from ouroboros.config import SETTINGS_DEFAULTS
 
 
@@ -160,15 +159,30 @@ def _normalize_direct_scope_review_model(settings: dict, provider: str) -> str:
 
 
 def classify_runtime_provider_change(before: dict, after: dict) -> str:
-    """Demo routing no longer emits provider-normalization warnings."""
-    del before, after
+    """Classify what kind of normalization ``apply_runtime_provider_defaults`` did.
+
+    Returns one of:
+
+    - ``"none"`` — no change, or change was purely cosmetic.
+    - ``"direct_normalize"`` — OpenRouter is NOT configured, and the function
+      auto-filled direct-provider defaults.  This is the only case where a
+      user-facing warning is appropriate.
+    - ``"reverse_migrate"`` — OpenRouter IS configured (so no exclusive-direct
+      provider is active).  ``apply_runtime_provider_defaults`` returned early
+      without making any changes, so this is pure housekeeping and should NOT
+      produce a warning.
+    """
+    provider_after = _exclusive_direct_remote_provider(after)
+    if provider_after:
+        return "direct_normalize"
+    has_openrouter_after = bool(_setting_text(after, "OPENROUTER_API_KEY"))
+    if has_openrouter_after:
+        return "reverse_migrate"
     return "none"
 
 
 def has_remote_provider(settings: dict) -> bool:
-    """Return True when the fixed demo LLM endpoint is configured."""
-    if _setting_text(settings, "LLM_URL") or DEFAULT_LLM_URL:
-        return True
+    """Return True when any supported remote-provider credential is configured."""
     return any(
         str(settings.get(key, "") or "").strip()
         for key in (
@@ -210,20 +224,34 @@ def has_supervisor_provider(settings: dict) -> bool:
 def apply_runtime_provider_defaults(settings: dict) -> tuple[dict, bool, list[str]]:
     """Auto-fill safe runtime defaults for the agreed provider cases."""
     normalized = dict(settings)
-    demo_keys = (
-        "OUROBOROS_MODEL",
-        "OUROBOROS_MODEL_CODE",
-        "OUROBOROS_MODEL_LIGHT",
-        "OUROBOROS_MODEL_FALLBACK",
-        "OUROBOROS_WEBSEARCH_MODEL",
-        "OUROBOROS_REVIEW_MODELS",
-        "OUROBOROS_SCOPE_REVIEW_MODEL",
-    )
-    changed_keys = []
-    for key in demo_keys:
-        if _setting_text(normalized, key) != DEMO_LLM_MODEL:
-            normalized[key] = DEMO_LLM_MODEL
+    provider = _exclusive_direct_remote_provider(normalized)
+
+    if not provider:
+        return normalized, False, []
+
+    changed_keys: list[str] = []
+    provider_defaults = _DIRECT_PROVIDER_AUTO_DEFAULTS[provider]
+    for key in _ALL_MODEL_SLOT_KEYS:
+        raw_current = _setting_text(normalized, key)
+        current = migrate_model_value(provider, raw_current)
+        default = _setting_text(SETTINGS_DEFAULTS, key)
+        auto_value = provider_defaults[key]
+        legacy_defaults = _DIRECT_PROVIDER_LEGACY_DEFAULTS.get(provider, {}).get(key, set())
+        next_value = auto_value if current in {"", default, *legacy_defaults} else current
+        if next_value != raw_current:
+            normalized[key] = next_value
             changed_keys.append(key)
+
+    review_models = _normalize_direct_review_models(normalized, provider)
+    if review_models != _setting_text(normalized, "OUROBOROS_REVIEW_MODELS"):
+        normalized["OUROBOROS_REVIEW_MODELS"] = review_models
+        changed_keys.append("OUROBOROS_REVIEW_MODELS")
+
+    scope_review_model = _normalize_direct_scope_review_model(normalized, provider)
+    if scope_review_model != _setting_text(normalized, "OUROBOROS_SCOPE_REVIEW_MODEL"):
+        normalized["OUROBOROS_SCOPE_REVIEW_MODEL"] = scope_review_model
+        changed_keys.append("OUROBOROS_SCOPE_REVIEW_MODEL")
+
     return normalized, bool(changed_keys), changed_keys
 
 

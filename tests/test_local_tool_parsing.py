@@ -104,65 +104,6 @@ Sure, I will use the tool now.
         self.assertEqual(args["content"], "hello world")
         self.assertEqual(args["path"], "test.txt")
 
-    def test_parses_fenced_json_tool_call_object(self):
-        from ouroboros.llm import LLMClient
-
-        msg = {
-            "content": (
-                "```json\n"
-                "{\n"
-                '  "name": "repo_read",\n'
-                '  "arguments": {"path": "README.md"}\n'
-                "}\n"
-                "```"
-            ),
-            "tool_calls": [],
-        }
-
-        parsed = LLMClient._parse_tool_calls_from_content(msg, {"repo_read"})
-
-        self.assertEqual(len(parsed["tool_calls"]), 1)
-        self.assertIsNone(parsed["content"])
-        self.assertEqual(parsed["tool_calls"][0]["function"]["name"], "repo_read")
-        args = json.loads(parsed["tool_calls"][0]["function"]["arguments"])
-        self.assertEqual(args, {"path": "README.md"})
-
-    def test_parses_json_tool_call_array(self):
-        from ouroboros.llm import LLMClient
-
-        msg = {
-            "content": (
-                "["
-                '{"name": "repo_read", "arguments": {"path": "README.md"}},'
-                '{"name": "repo_write", "arguments": {"path": "notes.txt", "content": "hello"}}'
-                "]"
-            ),
-            "tool_calls": [],
-        }
-
-        parsed = LLMClient._parse_tool_calls_from_content(msg, {"repo_read", "repo_write"})
-
-        self.assertEqual(len(parsed["tool_calls"]), 2)
-        self.assertEqual(parsed["tool_calls"][0]["function"]["name"], "repo_read")
-        self.assertEqual(parsed["tool_calls"][1]["function"]["name"], "repo_write")
-
-    def test_rejects_mixed_prose_and_fenced_json_tool_call(self):
-        from ouroboros.llm import LLMClient
-
-        msg = {
-            "content": (
-                "I will use the tool.\n"
-                "```json\n"
-                '{"name": "repo_read", "arguments": {"path": "README.md"}}\n'
-                "```"
-            ),
-            "tool_calls": [],
-        }
-
-        parsed = LLMClient._parse_tool_calls_from_content(msg, {"repo_read"})
-
-        self.assertEqual(parsed, msg)
-
 
 class TestStripReasoningWrappers(unittest.TestCase):
     """Tests for LLMClient._strip_reasoning_wrappers."""

@@ -15,15 +15,14 @@ function providerCard({ id, title, icon, hint, body, open = false }) {
     `;
 }
 
-function secretField({ id, settingKey, label, placeholder, disabled = false }) {
-    const disabledAttr = disabled ? 'disabled aria-disabled="true"' : '';
+function secretField({ id, settingKey, label, placeholder }) {
     return `
         <div class="form-field">
             <label>${label}</label>
             <div class="secret-input-row">
-                <input id="${id}" data-secret-setting="${settingKey}" class="secret-input" type="password" placeholder="${placeholder}" ${disabledAttr}>
-                <button type="button" class="settings-ghost-btn secret-toggle" data-target="${id}" ${disabledAttr}>Show</button>
-                <button type="button" class="settings-ghost-btn secret-clear" data-target="${id}" ${disabledAttr}>Clear</button>
+                <input id="${id}" data-secret-setting="${settingKey}" class="secret-input" type="password" placeholder="${placeholder}">
+                <button type="button" class="settings-ghost-btn secret-toggle" data-target="${id}">Show</button>
+                <button type="button" class="settings-ghost-btn secret-clear" data-target="${id}">Clear</button>
             </div>
         </div>
     `;
@@ -45,7 +44,6 @@ function modelCard({ title, copy, inputId, toggleId, defaultValue }) {
                     value="${defaultValue}"
                     autocomplete="off"
                     spellcheck="false"
-                    readonly
                 >
                 <div class="model-picker-results" hidden></div>
             </div>
@@ -88,8 +86,8 @@ export function renderSettingsPage() {
             <div class="settings-scroll">
                 <section class="settings-panel active" data-settings-panel="providers">
                     <div class="settings-section-copy">
-                        Demo builds use the server-side <code>LLM_URL</code> endpoint with fixed certificate paths.
-                        Provider API keys are ignored for normal LLM routing, so these legacy fields are disabled.
+                        Configure remote providers and the optional network gate. Secret fields now have explicit
+                        <code>Clear</code> actions so masked values can be removed intentionally.
                     </div>
                     ${providerCard({
                         id: 'openrouter',
@@ -102,7 +100,6 @@ export function renderSettingsPage() {
                             settingKey: 'OPENROUTER_API_KEY',
                             label: 'OpenRouter API Key',
                             placeholder: 'sk-or-...',
-                            disabled: true,
                         })}</div>`,
                     })}
                     ${providerCard({
@@ -116,9 +113,8 @@ export function renderSettingsPage() {
                                 settingKey: 'OPENAI_API_KEY',
                                 label: 'OpenAI API Key',
                                 placeholder: 'sk-...',
-                                disabled: true,
                             })}</div>
-                            <div class="settings-inline-note">Disabled in the demo build. Remote LLM calls always use <code>LLM_URL</code>.</div>
+                            <div class="settings-inline-note">Use model values like <code>openai::gpt-5.5</code> in the Models tab to route models directly here. If OpenRouter is absent and the shipped defaults are still untouched, Ouroboros auto-remaps them to official OpenAI defaults.</div>
                         `,
                     })}
                     ${providerCard({
@@ -133,14 +129,13 @@ export function renderSettingsPage() {
                                     settingKey: 'OPENAI_COMPATIBLE_API_KEY',
                                     label: 'API Key',
                                     placeholder: 'Compatible provider key',
-                                    disabled: true,
                                 })}
                                 <div class="form-field">
                                     <label>Base URL</label>
-                                    <input id="s-openai-compatible-base-url" placeholder="https://provider.example/v1" readonly disabled>
+                                    <input id="s-openai-compatible-base-url" placeholder="https://provider.example/v1">
                                 </div>
                             </div>
-                            <div class="settings-inline-note">Disabled in the demo build. Set <code>LLM_URL</code> in the server environment instead.</div>
+                            <div class="settings-inline-note">Use this card for custom base URLs. Built-in web search only works with the official OpenAI Responses API, so keep <code>OPENAI_BASE_URL</code> empty when you want <code>web_search</code>.</div>
                         `,
                     })}
                     ${providerCard({
@@ -155,11 +150,10 @@ export function renderSettingsPage() {
                                     settingKey: 'CLOUDRU_FOUNDATION_MODELS_API_KEY',
                                     label: 'API Key',
                                     placeholder: 'Cloud.ru Foundation Models API key',
-                                    disabled: true,
                                 })}
                                 <div class="form-field">
                                     <label>Base URL</label>
-                                    <input id="s-cloudru-base-url" placeholder="https://foundation-models.api.cloud.ru/v1" readonly disabled>
+                                    <input id="s-cloudru-base-url" placeholder="https://foundation-models.api.cloud.ru/v1">
                                 </div>
                             </div>
                         `,
@@ -175,9 +169,8 @@ export function renderSettingsPage() {
                                 settingKey: 'ANTHROPIC_API_KEY',
                                 label: 'Anthropic API Key',
                                 placeholder: 'sk-ant-...',
-                                disabled: true,
                             })}</div>
-                            <div class="settings-inline-note">Disabled in the demo build. Claude tooling panels remain visible only for runtime diagnostics.</div>
+                            <div class="settings-inline-note">Use model values like <code>anthropic::claude-sonnet-4-6</code> in the Models tab to route models directly through Anthropic. Claude tooling still reuses this key.</div>
                             <div class="settings-toolbar" id="settings-claude-code-panel" hidden>
                                 <button type="button" class="settings-ghost-btn" id="btn-claude-code-install">Repair Runtime</button>
                                 <span id="settings-claude-code-status" class="settings-inline-status">Checking Claude runtime...</span>
@@ -190,10 +183,10 @@ export function renderSettingsPage() {
                         <div class="form-row">
                             <div class="form-field">
                                 <label>Legacy OpenAI Base URL</label>
-                                <input id="s-openai-base-url" placeholder="https://api.openai.com/v1 or compatible endpoint" readonly disabled>
+                                <input id="s-openai-base-url" placeholder="https://api.openai.com/v1 or compatible endpoint">
                             </div>
                         </div>
-                        <div class="settings-inline-note">Disabled in the demo build. Use <code>LLM_URL</code> on the server.</div>
+                        <div class="settings-inline-note">Backward-compatibility escape hatch for older installs. For new custom providers, use the dedicated <code>OpenAI Compatible</code> card instead.</div>
                     </div>
                     <div class="form-section compact">
                         <h3>Network Gate</h3>
@@ -212,8 +205,8 @@ export function renderSettingsPage() {
                     <div class="form-section">
                         <h3>Model Routing</h3>
                         <div class="settings-section-copy">
-                            Demo builds use <code>GigaChat-3-Ultra-preview</code> for every remote LLM call.
-                            The fields below are read-only compatibility echoes for existing settings files.
+                            These fields are cloud model IDs. Enable <code>Local</code> to route that model
+                            through the GGUF server configured in Advanced.
                         </div>
                         <div class="settings-toolbar">
                             <button type="button" class="settings-ghost-btn" id="btn-refresh-model-catalog">Refresh Model Catalog</button>
@@ -236,24 +229,24 @@ export function renderSettingsPage() {
 
                     <div class="form-section">
                         <h3>Review Models</h3>
-                        <div class="settings-section-copy">Demo builds use the fixed GigaChat model for review and search lanes.</div>
+                        <div class="settings-section-copy">Models used by the pre-commit review gate. Runs automatically on every <code>repo_commit</code>.</div>
                         <div class="form-row">
                             <div class="form-field">
                                 <label>Pre-commit Review Models</label>
-                                <input id="s-review-models" placeholder="GigaChat-3-Ultra-preview" readonly>
-                                <div class="settings-inline-note">Read-only compatibility echo. The backend normalizes this to the demo model on save.</div>
+                                <input id="s-review-models" placeholder="model1,model2,model3">
+                                <div class="settings-inline-note">Comma-separated review models (triad). In OpenAI-only or Anthropic-only direct-provider mode, the list is auto-normalized to [main, light, light] (3 slots, 2 unique) so both the commit triad and plan_task (which requires >=2 distinct models for majority-vote) work out of the box. OpenAI-compatible and Cloud.ru setups are not auto-normalized and must configure the list explicitly.</div>
                             </div>
                         </div>
                         <div class="form-grid two">
                             <div class="form-field">
                                 <label>Scope Review Model</label>
-                                <input id="s-scope-review-model" placeholder="GigaChat-3-Ultra-preview" readonly>
-                                <div class="settings-inline-note">Read-only compatibility echo for the blocking scope reviewer.</div>
+                                <input id="s-scope-review-model" placeholder="openai/gpt-5.5">
+                                <div class="settings-inline-note">Single model for the blocking scope reviewer. Runs in parallel with the triad diff review.</div>
                             </div>
                             <div class="form-field">
                                 <label>Web Search Model</label>
-                                <input id="s-websearch-model" placeholder="GigaChat-3-Ultra-preview" readonly>
-                                <div class="settings-inline-note">Read-only compatibility echo for lightweight search summaries.</div>
+                                <input id="s-websearch-model" placeholder="gpt-5.2">
+                                <div class="settings-inline-note">OpenAI model for <code>web_search</code>. Requires <code>OPENAI_API_KEY</code> and an empty Legacy Base URL.</div>
                             </div>
                         </div>
                     </div>

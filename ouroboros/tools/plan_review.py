@@ -221,35 +221,27 @@ async def _run_plan_review_async(
     unique_resolved = list(dict.fromkeys(resolved_models))
     # Majority-vote coordination requires >=2 distinct reviewers.
     if len(unique_resolved) < 2:
-        try:
-            from ouroboros.demo_llm import DEMO_LLM_MODEL, resolve_llm_url
-            demo_single_model = bool(resolve_llm_url()) and unique_resolved == [DEMO_LLM_MODEL]
-        except Exception:
-            demo_single_model = False
-        if demo_single_model:
-            unique_resolved = list(unique_resolved)
-        else:
-            single_provider_hint = ""
-            if (
-                resolved_models
-                and all(m == resolved_models[0] for m in resolved_models)
-                and len(resolved_models) >= 2
-            ):
-                single_provider_hint = (
-                    " If you are on a single-provider setup (OpenAI-only or "
-                    "Anthropic-only direct routing), configure distinct "
-                    "values for OUROBOROS_MODEL and OUROBOROS_MODEL_LIGHT so "
-                    "the direct-provider fallback seeds `[main, light, light]`, "
-                    "or add a second model explicitly via OUROBOROS_REVIEW_MODELS."
-                )
-            return (
-                "ERROR: plan_task requires at least 2 unique reviewer models for "
-                f"majority-vote coordination. Got {len(unique_resolved)} unique "
-                f"model(s) from {resolved_models!r}. Fix OUROBOROS_REVIEW_MODELS "
-                "in settings (example: 'openai/gpt-5.5,"
-                "google/gemini-3.1-pro-preview,anthropic/claude-opus-4.7')."
-                + single_provider_hint
+        single_provider_hint = ""
+        if (
+            resolved_models
+            and all(m == resolved_models[0] for m in resolved_models)
+            and len(resolved_models) >= 2
+        ):
+            single_provider_hint = (
+                " If you are on a single-provider setup (OpenAI-only or "
+                "Anthropic-only direct routing), configure distinct "
+                "values for OUROBOROS_MODEL and OUROBOROS_MODEL_LIGHT so "
+                "the direct-provider fallback seeds `[main, light, light]`, "
+                "or add a second model explicitly via OUROBOROS_REVIEW_MODELS."
             )
+        return (
+            "ERROR: plan_task requires at least 2 unique reviewer models for "
+            f"majority-vote coordination. Got {len(unique_resolved)} unique "
+            f"model(s) from {resolved_models!r}. Fix OUROBOROS_REVIEW_MODELS "
+            "in settings (example: 'openai/gpt-5.5,"
+            "google/gemini-3.1-pro-preview,anthropic/claude-opus-4.7')."
+            + single_provider_hint
+        )
 
     # Quorum passed — now run on the UNIQUE reviewer set, not the padded list
     # from `_get_review_models`. Padding would let the same model cast more

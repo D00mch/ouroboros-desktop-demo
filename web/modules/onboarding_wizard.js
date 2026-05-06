@@ -100,7 +100,17 @@
     }
 
     function detectProviderProfile() {
-        return 'demo';
+        const hasOpenrouter = trim(state.openrouterKey).length >= 10;
+        const hasOpenai = trim(state.openaiKey).length >= 10;
+        const hasCloudru = trim(state.cloudruKey).length >= 10;
+        const hasAnthropic = trim(state.anthropicKey).length >= 10;
+        if (hasOpenrouter) return 'openrouter';
+        if ([hasOpenai, hasCloudru, hasAnthropic].filter(Boolean).length > 1) return 'direct-multi';
+        if (hasOpenai) return 'openai';
+        if (hasCloudru) return 'cloudru';
+        if (hasAnthropic) return 'anthropic';
+        if (hasLocalModel()) return 'local';
+        return 'openrouter';
     }
 
     function activeProviderProfile() {
@@ -110,7 +120,6 @@
     }
 
     function profileLabel(profile) {
-        if (profile === 'demo') return 'Demo GigaChat endpoint';
         if (profile === 'openai') return 'OpenAI';
         if (profile === 'cloudru') return 'Cloud.ru Foundation Models';
         if (profile === 'anthropic') return 'Anthropic';
@@ -476,13 +485,28 @@
 
     function summaryRows() {
         const rows = [
-            ['LLM endpoint', trim(state.llmUrl) || 'https://gigachat-ift.sberdevices.delta.sbrf.ru/v1/chat/completions'],
-            ['Model', trim(state.mainModel) || 'GigaChat-3-Ultra-preview'],
+            ['Detected setup', profileLabel(activeProviderProfile())],
             ['Review mode', reviewLabel(state.reviewEnforcement)],
             ['Runtime mode', runtimeModeLabel(state.runtimeMode)],
             ['Total budget', formatUsd(state.totalBudget)],
             ['Per-task soft threshold', formatUsd(state.perTaskCostUsd)],
+            ['Main', trim(state.mainModel)],
+            ['Code', trim(state.codeModel)],
+            ['Light', trim(state.lightModel)],
+            ['Fallback', trim(state.fallbackModel)],
         ];
+        if (trim(state.openrouterKey)) rows.splice(1, 0, ['OpenRouter', 'configured']);
+        if (trim(state.openaiKey)) rows.splice(1, 0, ['OpenAI', 'configured']);
+        if (trim(state.cloudruKey)) rows.splice(1, 0, ['Cloud.ru', 'configured']);
+        if (trim(state.anthropicKey)) rows.splice(1, 0, ['Anthropic', 'configured']);
+        if (hasLocalModel()) {
+            rows.splice(
+                1,
+                0,
+                ['Local source', trim(state.localSource) + (trim(state.localFilename) ? ` / ${trim(state.localFilename)}` : '')],
+                ['Local routing', localRoutingLabel(state.localRoutingMode)],
+            );
+        }
         if (trim(state.skillsRepoPath)) {
             rows.push(['Skills repo', trim(state.skillsRepoPath)]);
         }
@@ -812,7 +836,7 @@
                 <div class="wizard-header">
                     <div>
                         <h1 class="wizard-title">Ouroboros</h1>
-                        <p class="wizard-subtitle">Demo onboarding uses the server-side LLM_URL endpoint and fixed certificate paths; no provider keys or model picking are required.</p>
+                        <p class="wizard-subtitle">Shared desktop and web onboarding with the same model, review, and budget flow in both hosts.</p>
                     </div>
                     <div class="wizard-badge">Step ${index + 1} of ${STEP_ORDER.length}</div>
                 </div>
@@ -1090,8 +1114,8 @@
     }
 
     async function saveWizard() {
-        const providersError = STEP_ORDER.includes('providers') ? validateProvidersStep() : '';
-        const modelsError = STEP_ORDER.includes('models') ? validateModelsStep() : '';
+        const providersError = validateProvidersStep();
+        const modelsError = validateModelsStep();
         const reviewError = validateReviewStep();
         const budgetError = validateBudgetStep();
         state.error = providersError || modelsError || reviewError || budgetError;
@@ -1103,10 +1127,10 @@
         state.error = '';
         render();
         const payload = {
-            OPENROUTER_API_KEY: '',
-            OPENAI_API_KEY: '',
-            CLOUDRU_FOUNDATION_MODELS_API_KEY: '',
-            ANTHROPIC_API_KEY: '',
+            OPENROUTER_API_KEY: trim(state.openrouterKey),
+            OPENAI_API_KEY: trim(state.openaiKey),
+            CLOUDRU_FOUNDATION_MODELS_API_KEY: trim(state.cloudruKey),
+            ANTHROPIC_API_KEY: trim(state.anthropicKey),
             TOTAL_BUDGET: Number(state.totalBudget || 0),
             OUROBOROS_PER_TASK_COST_USD: Number(state.perTaskCostUsd || 0),
             OUROBOROS_REVIEW_ENFORCEMENT: trim(state.reviewEnforcement) || 'advisory',
@@ -1117,10 +1141,10 @@
             LOCAL_MODEL_N_GPU_LAYERS: Number(state.localGpuLayers || 0),
             LOCAL_MODEL_CHAT_FORMAT: trim(state.localChatFormat),
             LOCAL_ROUTING_MODE: trim(state.localSource) ? (trim(state.localRoutingMode) || 'cloud') : 'cloud',
-            OUROBOROS_MODEL: 'GigaChat-3-Ultra-preview',
-            OUROBOROS_MODEL_CODE: 'GigaChat-3-Ultra-preview',
-            OUROBOROS_MODEL_LIGHT: 'GigaChat-3-Ultra-preview',
-            OUROBOROS_MODEL_FALLBACK: 'GigaChat-3-Ultra-preview',
+            OUROBOROS_MODEL: trim(state.mainModel),
+            OUROBOROS_MODEL_CODE: trim(state.codeModel),
+            OUROBOROS_MODEL_LIGHT: trim(state.lightModel),
+            OUROBOROS_MODEL_FALLBACK: trim(state.fallbackModel),
         };
         if (HOST_MODE === 'desktop') {
             payload.OUROBOROS_RUNTIME_MODE = trim(state.runtimeMode) || 'advanced';

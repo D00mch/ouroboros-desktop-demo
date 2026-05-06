@@ -16,7 +16,6 @@ import time
 import copy
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ouroboros.demo_llm import DEMO_LLM_MODEL, resolve_client_cert_paths, resolve_llm_url
 from ouroboros.provider_models import normalize_anthropic_model_id
 
 log = logging.getLogger(__name__)
@@ -539,14 +538,20 @@ class LLMClient:
         When use_local=True, routes to the local llama-cpp-python server
         and strips OpenRouter-specific parameters (reasoning, provider, cache_control).
 
-        Remote demo calls ignore provider/model settings and POST directly to
-        LLM_URL with the fixed mTLS certificate pair.
+        When no_proxy=True, the underlying httpx transport is built with
+        trust_env=False and an empty mounts map, bypassing OS-level and
+        env-var proxy detection.  Use this in contexts where the process
+        was forked from a multithreaded parent (e.g. macOS app-bundle
+        workers) to avoid a SIGSEGV in SCDynamicStoreCopyProxiesWithOptions.
         """
-        del model, reasoning_effort
         if use_local:
             return self._chat_local(messages, tools, max_tokens, tool_choice)
 
-        return self._chat_demo_llm(messages, tools, max_tokens, tool_choice, temperature, no_proxy=no_proxy)
+        target = self._resolve_remote_target(model)
+        return self._chat_remote(
+            target, messages, tools, reasoning_effort, max_tokens, tool_choice, temperature,
+            no_proxy=no_proxy,
+        )
 
     async def chat_async(
         self,
@@ -561,209 +566,65 @@ class LLMClient:
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Async remote chat used by review/concurrent callers.
 
-        The demo endpoint is synchronous requests-based, so async callers run
-        the same fixed LLM_URL call in a worker thread.
+        When no_proxy=True, bypasses OS-level and env-var proxy detection via
+        trust_env=False.  This is required in forked worker processes on macOS
+        to avoid a SIGSEGV in SCDynamicStoreCopyProxiesWithOptions.
+
+        Applies to both the Anthropic path (synchronous requests.Session run in
+        a thread) and the OpenAI-compatible async path (httpx.AsyncClient with
+        trust_env=False and empty mounts).
         """
-        del model, reasoning_effort
         if tools:
             raise ValueError("chat_async does not support tool calls")
-        return await asyncio.to_thread(
-            self._chat_demo_llm,
-            messages,
-            tools,
-            max_tokens,
-            tool_choice,
-            temperature,
-            no_proxy,
-        )
-
-    @staticmethod
-    def _demo_message_content_to_text(content: Any) -> str:
-        if content is None:
-            return ""
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: List[str] = []
-            for block in content:
-                if isinstance(block, dict):
-                    if block.get("text") is not None:
-                        parts.append(str(block.get("text") or ""))
-                    else:
-                        parts.append(json.dumps(block, ensure_ascii=False))
-                elif block is not None:
-                    parts.append(str(block))
-            return "\n\n".join(part for part in parts if part)
-        if isinstance(content, dict):
-            return json.dumps(content, ensure_ascii=False)
-        return str(content)
-
-    @staticmethod
-    def _demo_tool_calls_to_records(tool_calls: Any) -> List[Dict[str, Any]]:
-        records: List[Dict[str, Any]] = []
-        if not isinstance(tool_calls, list):
-            return records
-        for idx, tool_call in enumerate(tool_calls):
-            if not isinstance(tool_call, dict):
-                continue
-            function = tool_call.get("function") or {}
-            if not isinstance(function, dict):
-                continue
-            name = str(function.get("name") or "").strip()
-            if not name:
-                continue
-            raw_args = function.get("arguments")
-            if isinstance(raw_args, str):
-                try:
-                    args = json.loads(raw_args) if raw_args.strip() else {}
-                except json.JSONDecodeError:
-                    args = {"raw": raw_args}
-            elif isinstance(raw_args, dict):
-                args = raw_args
-            elif raw_args is None:
-                args = {}
-            else:
-                args = {"value": raw_args}
-            records.append({
-                "id": str(tool_call.get("id") or f"call_{idx}"),
-                "name": name,
-                "arguments": args,
-            })
-        return records
-
-    @staticmethod
-    def _demo_tool_instruction(tools: List[Dict[str, Any]]) -> Optional[Dict[str, str]]:
-        names = [
-            str((tool.get("function") or {}).get("name") or "").strip()
-            for tool in tools
-            if isinstance(tool, dict)
-        ]
-        names = [name for name in names if name]
-        if not names:
-            return None
-        return {
-            "role": "system",
-            "content": (
-                "Tool calling compatibility mode is active. If a tool is needed, "
-                "reply with only a JSON object, or a JSON array of objects, shaped "
-                'as {"name":"tool_name","arguments":{...}}. A ```json fenced block '
-                "with exactly that JSON is also accepted. Use only these tool names: "
-                f"{', '.join(names)}. Do not add prose around a tool call. "
-                "If no tool is needed, answer normally."
-            ),
-        }
-
-    @staticmethod
-    def _prepare_demo_messages(
-        messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        cleaned = LLMClient._strip_cache_control(messages)
-        prepared: List[Dict[str, Any]] = []
-        for msg in cleaned:
-            role = str(msg.get("role") or "user").strip().lower()
-            if role == "tool":
-                tool_call_id = str(msg.get("tool_call_id") or "").strip()
-                label = "Tool result" + (f" ({tool_call_id})" if tool_call_id else "")
-                content = LLMClient._demo_message_content_to_text(msg.get("content"))
-                prepared.append({
-                    "role": "user",
-                    "content": f"{label}:\n{content}" if content else f"{label}: [empty]",
-                })
-                continue
-
-            if role not in {"system", "user", "assistant"}:
-                role = "user"
-            content = LLMClient._demo_message_content_to_text(msg.get("content"))
-            if role == "assistant":
-                tool_records = LLMClient._demo_tool_calls_to_records(msg.get("tool_calls"))
-                if tool_records:
-                    tool_history = (
-                        "Tool calls requested:\n```json\n"
-                        + json.dumps(tool_records, ensure_ascii=False, indent=2)
-                        + "\n```"
-                    )
-                    content = "\n\n".join(part for part in (content, tool_history) if part).strip()
-            prepared.append({"role": role, "content": content})
-
-        instruction = LLMClient._demo_tool_instruction(tools)
-        if instruction:
-            insert_at = 0
-            while insert_at < len(prepared) and prepared[insert_at].get("role") == "system":
-                insert_at += 1
-            prepared.insert(insert_at, instruction)
-        return prepared
-
-    def _chat_demo_llm(
-        self,
-        messages: List[Dict[str, Any]],
-        tools: Optional[List[Dict[str, Any]]],
-        max_tokens: int,
-        tool_choice: str,
-        temperature: Optional[float] = None,
-        no_proxy: bool = False,
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Send one request to the fixed demo LLM_URL endpoint using mTLS."""
-        import requests
-        import urllib3
-
-        url = resolve_llm_url()
-        cert_path, key_path = resolve_client_cert_paths()
-        clean_tools = self._sanitize_chat_completion_tools(tools)
-        clean_messages = self._prepare_demo_messages(messages, clean_tools)
-        payload: Dict[str, Any] = {
-            "model": DEMO_LLM_MODEL,
-            "messages": clean_messages,
-            "max_tokens": max_tokens,
-        }
-        if temperature is not None:
-            payload["temperature"] = temperature
-
-        if clean_tools:
-            payload["tools"] = clean_tools
-            payload["tool_choice"] = tool_choice
-
-        headers = {"Content-Type": "application/json"}
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-        if no_proxy:
-            with requests.Session() as session:
-                session.trust_env = False
-                response = session.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    cert=(cert_path, key_path),
-                    verify=False,
-                    timeout=120,
-                )
-        else:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                cert=(cert_path, key_path),
-                verify=False,
-                timeout=120,
+        target = self._resolve_remote_target(model)
+        if target.get("provider") == "anthropic":
+            return await asyncio.to_thread(
+                self._chat_anthropic,
+                target,
+                messages,
+                tools,
+                reasoning_effort,
+                max_tokens,
+                tool_choice,
+                temperature,
+                no_proxy,
             )
-        response.raise_for_status()
-        resp_dict = response.json()
-        target = {
-            "provider": "gigachat",
-            "resolved_model": DEMO_LLM_MODEL,
-            "usage_model": str(resp_dict.get("model") or DEMO_LLM_MODEL),
-            "supports_openrouter_extensions": False,
-            "supports_generation_cost": False,
-        }
-        msg, usage = self._normalize_remote_response(resp_dict, target)
-        if not msg.get("tool_calls") and msg.get("content") and clean_tools:
-            allowed_tool_names = {
-                str((tool.get("function") or {}).get("name") or "").strip()
-                for tool in clean_tools
-                if isinstance(tool, dict)
-            }
-            msg = self._parse_tool_calls_from_content(msg, allowed_tool_names)
-        return msg, usage
+        if no_proxy:
+            import httpx
+            from openai import AsyncOpenAI
+
+            base_url = str(target.get("base_url") or "")
+            api_key = str(target.get("api_key") or "")
+            headers_dict = dict(target.get("default_headers") or {})
+            _http_client = httpx.AsyncClient(
+                trust_env=False,
+                mounts={},
+                timeout=httpx.Timeout(connect=30.0, read=3600.0, write=3600.0, pool=30.0),
+            )
+            _oa_client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                default_headers=headers_dict,
+                http_client=_http_client,
+                max_retries=0,
+            )
+            try:
+                kwargs = self._build_remote_kwargs(
+                    target, messages, reasoning_effort, max_tokens, tool_choice, temperature, tools
+                )
+                resp = await _oa_client.chat.completions.create(**kwargs)
+                return self._normalize_remote_response(resp.model_dump(), target, skip_cost_fetch=True)
+            finally:
+                try:
+                    await _http_client.aclose()
+                except Exception:
+                    pass
+        client = self._get_async_remote_client(target)
+        kwargs = self._build_remote_kwargs(
+            target, messages, reasoning_effort, max_tokens, tool_choice, temperature, tools
+        )
+        resp = await client.chat.completions.create(**kwargs)
+        return self._normalize_remote_response(resp.model_dump(), target)
 
     def _prepare_messages_for_local_context(
         self,
@@ -946,78 +807,20 @@ class LLMClient:
         return combined, "\n\n".join(reasoning_parts)
 
     @staticmethod
-    def _strip_single_json_code_fence(text: str) -> str:
-        match = re.fullmatch(
-            r"```(?:json)?\s*(.*?)\s*```",
-            text.strip(),
-            re.DOTALL | re.IGNORECASE,
-        )
-        if not match:
-            return text.strip()
-        return match.group(1).strip()
-
-    @staticmethod
-    def _load_tool_call_json(raw: str) -> Any:
-        raw_stripped = raw.strip()
-        try:
-            return json.loads(raw_stripped)
-        except json.JSONDecodeError:
-            if raw_stripped.startswith("{{") and raw_stripped.endswith("}}"):
-                return json.loads(raw_stripped[1:-1])
-            raise
-
-    @staticmethod
-    def _normalize_text_tool_call_payloads(obj: Any) -> List[Dict[str, Any]]:
-        if isinstance(obj, dict) and isinstance(obj.get("tool_calls"), list):
-            candidates = obj.get("tool_calls") or []
-        elif isinstance(obj, dict) and isinstance(obj.get("tool_call"), dict):
-            candidates = [obj.get("tool_call") or {}]
-        elif isinstance(obj, list):
-            candidates = obj
-        elif isinstance(obj, dict):
-            candidates = [obj]
-        else:
-            raise ValueError("tool_call JSON must be an object or array")
-
-        payloads: List[Dict[str, Any]] = []
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                raise ValueError("tool_call entry must be an object")
-            function = candidate.get("function") or {}
-            if isinstance(function, dict) and function:
-                name = str(function.get("name") or candidate.get("name") or "").strip()
-                args = function.get("arguments", candidate.get("arguments", {}))
-            else:
-                name = str(candidate.get("name") or candidate.get("tool_name") or "").strip()
-                args = candidate.get("arguments", candidate.get("args", {}))
-            if isinstance(args, str):
-                args = json.loads(args) if args.strip() else {}
-            elif args is None:
-                args = {}
-            if not name:
-                raise ValueError("tool_call missing function name")
-            if not isinstance(args, dict):
-                raise ValueError("tool_call arguments must be an object")
-            payloads.append({"name": name, "arguments": args})
-        return payloads
-
-    @staticmethod
     def _parse_tool_calls_from_content(
         msg: Dict[str, Any],
         allowed_tool_names: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
-        """Parse strict text tool-call payloads into structured tool_calls.
+        """Parse <tool_call> XML tags from content into structured tool_calls.
 
         Works around llama-cpp-python not parsing Qwen/Hermes-style tool calls
-        (https://github.com/abetlen/llama-cpp-python/issues/1784), and handles
-        demo endpoint responses that return a tool call as a JSON content block
-        instead of OpenAI-native ``tool_calls``.
+        (https://github.com/abetlen/llama-cpp-python/issues/1784).
 
         Qwen3 models with ``enable_thinking=True`` (default) wrap their chain-of-
         thought in ``<think>...</think>`` before emitting the actual ``<tool_call>``
         block.  This method strips the reasoning wrapper first, then applies the
-        strict full-match safety guard. Demo JSON content must likewise be the
-        whole response, either bare JSON or one fenced JSON block.
+        strict full-match safety guard so responses that contain genuine prose
+        alongside tool call text are still rejected.
 
         Contract: when tool calls are successfully parsed, ``msg["content"]`` is
         set to the extracted reasoning text (may be an empty string).  Callers in
@@ -1038,53 +841,51 @@ class LLMClient:
             return msg
 
         # Phase 2: Safety guard — only upgrade the response when the remaining
-        # text is solely a supported tool-call envelope.  Mixed prose (without a
-        # reasoning wrapper) is left as plain text.
+        # text consists solely of one or more <tool_call> blocks.  Mixed prose
+        # (without a reasoning wrapper) is left as plain text.
         full_pattern = re.compile(
             r"^(?:\s*<tool_call>\s*\{.*?\}\s*</tool_call>\s*)+$",
             re.DOTALL,
         )
-        payloads: List[Dict[str, Any]] = []
-        if full_pattern.fullmatch(stripped):
-            matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
-            if not matches:
-                return msg
-            try:
-                for raw in matches:
-                    obj = LLMClient._load_tool_call_json(raw)
-                    payloads.extend(LLMClient._normalize_text_tool_call_payloads(obj))
-            except (json.JSONDecodeError, ValueError) as exc:
-                log.warning("Rejected text tool_call block: %s", exc)
-                return msg
-        else:
-            json_text = LLMClient._strip_single_json_code_fence(stripped)
-            if not (json_text.startswith("{") or json_text.startswith("[")):
-                return msg
-            try:
-                obj = LLMClient._load_tool_call_json(json_text)
-                payloads = LLMClient._normalize_text_tool_call_payloads(obj)
-            except (json.JSONDecodeError, ValueError) as exc:
-                log.debug("Rejected JSON content as tool_call: %s", exc)
-                return msg
+        if not full_pattern.fullmatch(stripped):
+            return msg
+
+        matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
+        if not matches:
+            return msg
 
         allowed = {name for name in (allowed_tool_names or set()) if name}
         tool_calls = []
-        for i, payload in enumerate(payloads):
+        for i, raw in enumerate(matches):
             try:
-                name = str(payload.get("name") or "").strip()
-                args = payload.get("arguments", {})
+                raw_stripped = raw.strip()
+                try:
+                    obj = json.loads(raw_stripped)
+                except json.JSONDecodeError:
+                    if raw_stripped.startswith("{{") and raw_stripped.endswith("}}"):
+                        obj = json.loads(raw_stripped[1:-1])
+                    else:
+                        raise
+                if not isinstance(obj, dict):
+                    raise ValueError("tool_call payload must be an object")
+                name = str(obj.get("name", "")).strip()
+                args = obj.get("arguments", {})
+                if not name:
+                    raise ValueError("tool_call missing function name")
                 if allowed and name not in allowed:
                     raise ValueError(f"unknown tool '{name}'")
+                if not isinstance(args, dict):
+                    raise ValueError("tool_call arguments must be an object")
                 tool_calls.append({
                     "id": f"call_local_{i}",
                     "type": "function",
                     "function": {
                         "name": name,
-                        "arguments": json.dumps(args, ensure_ascii=False),
+                        "arguments": json.dumps(args),
                     },
                 })
-            except ValueError as exc:
-                log.warning("Rejected parsed tool_call payload: %s (%s)", payload, exc)
+            except (json.JSONDecodeError, ValueError) as exc:
+                log.warning("Rejected local <tool_call> block: %s (%s)", raw[:200], exc)
                 return msg
 
         if not tool_calls:
@@ -1097,7 +898,7 @@ class LLMClient:
         # wrapper was present (original behaviour: content was None in that case,
         # but an empty string is equally falsy for callers that check truthiness).
         msg["content"] = reasoning or None
-        log.info("Parsed %d tool call(s) from text output", len(tool_calls))
+        log.info("Parsed %d local tool call(s) from text output", len(tool_calls))
         return msg
 
     @staticmethod
@@ -1799,9 +1600,17 @@ class LLMClient:
         return text, usage
 
     def default_model(self) -> str:
-        """Return the fixed demo model."""
-        return DEMO_LLM_MODEL
+        """Return the single default model from env. LLM switches via tool if needed."""
+        return os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
 
     def available_models(self) -> List[str]:
-        """Return the single available demo model."""
-        return [DEMO_LLM_MODEL]
+        """Return list of available models from env (for switch_model tool schema)."""
+        main = os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
+        code = os.environ.get("OUROBOROS_MODEL_CODE", "")
+        light = os.environ.get("OUROBOROS_MODEL_LIGHT", "")
+        models = [main]
+        if code and code != main:
+            models.append(code)
+        if light and light != main and light != code:
+            models.append(light)
+        return models

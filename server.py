@@ -92,22 +92,6 @@ _SECRET_SETTING_KEYS = {
     "GITHUB_TOKEN",
     "OUROBOROS_NETWORK_PASSWORD",
 }
-_DEMO_FIXED_MODEL_KEYS = {
-    "OUROBOROS_MODEL",
-    "OUROBOROS_MODEL_CODE",
-    "OUROBOROS_MODEL_LIGHT",
-    "OUROBOROS_MODEL_FALLBACK",
-    "OUROBOROS_WEBSEARCH_MODEL",
-    "OUROBOROS_REVIEW_MODELS",
-    "OUROBOROS_SCOPE_REVIEW_MODEL",
-}
-_DEMO_IGNORED_PROVIDER_KEYS = {
-    "OPENROUTER_API_KEY",
-    "OPENAI_API_KEY",
-    "OPENAI_COMPATIBLE_API_KEY",
-    "CLOUDRU_FOUNDATION_MODELS_API_KEY",
-    "ANTHROPIC_API_KEY",
-}
 
 # ---------------------------------------------------------------------------
 # Runtime network binding (captured in main() from parse_server_args)
@@ -321,19 +305,9 @@ def _merge_settings_payload(current: Dict[str, Any], body: Dict[str, Any]) -> Di
             continue
         if key not in body:
             continue
-        if key in _DEMO_FIXED_MODEL_KEYS:
-            merged[key] = DEMO_LLM_MODEL
-            continue
-        if key in _DEMO_IGNORED_PROVIDER_KEYS:
-            merged[key] = ""
-            continue
         if key in _SECRET_SETTING_KEYS and _looks_masked_secret(body[key]) and merged.get(key):
             continue
         merged[key] = body[key]
-    for key in _DEMO_FIXED_MODEL_KEYS:
-        merged[key] = DEMO_LLM_MODEL
-    for key in _DEMO_IGNORED_PROVIDER_KEYS:
-        merged[key] = ""
     return merged
 
 
@@ -395,7 +369,6 @@ from ouroboros.config import (
     SETTINGS_DEFAULTS as _SETTINGS_DEFAULTS,
     load_settings, save_settings, apply_settings_to_env as _apply_settings_to_env,
 )
-from ouroboros.demo_llm import DEMO_LLM_MODEL
 from ouroboros.server_runtime import (
     apply_runtime_provider_defaults,
     classify_runtime_provider_change,
