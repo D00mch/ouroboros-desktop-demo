@@ -16,6 +16,7 @@ import threading
 import time
 from typing import Any, Dict, List
 
+from ouroboros import gigachat as gigachat_runtime
 from ouroboros.task_results import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 
 def _resolve_task_summary_model(default_model: str) -> str:
     prefix_to_provider = {
+        "gigachat::": "gigachat",
         "openai::": "openai",
         "anthropic::": "anthropic",
         "cloudru::": "cloudru",
@@ -49,6 +51,8 @@ def _resolve_task_summary_model(default_model: str) -> str:
             if name.startswith(prefix):
                 provider = candidate_provider
                 break
+        if provider == "gigachat":
+            return gigachat_runtime.runtime_available()
         if provider == "openai-compatible":
             compat = str(os.environ.get("OPENAI_COMPATIBLE_API_KEY", "") or "").strip()
             legacy_key = str(os.environ.get("OPENAI_API_KEY", "") or "").strip()

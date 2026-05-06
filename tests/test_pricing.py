@@ -110,6 +110,9 @@ class TestInferApiKeyType:
     def test_anthropic_double_colon_is_direct_anthropic(self):
         assert infer_api_key_type("anthropic::claude-sonnet-4-6") == "anthropic"
 
+    def test_gigachat_double_colon_is_gigachat(self):
+        assert infer_api_key_type("gigachat::glm-5.1") == "gigachat"
+
     def test_unknown_defaults_openrouter(self):
         assert infer_api_key_type("some-random-model") == "openrouter"
 
@@ -133,6 +136,10 @@ class TestInferModelCategory:
     def test_matches_anthropic_double_colon_against_normalized_usage_name(self):
         with patch.dict(os.environ, {"OUROBOROS_MODEL": "anthropic::claude-sonnet-4.6"}):
             assert infer_model_category("anthropic/claude-sonnet-4-6") == "main"
+
+    def test_matches_gigachat_double_colon_against_usage_name(self):
+        with patch.dict(os.environ, {"OUROBOROS_MODEL": "gigachat::glm-5.1"}):
+            assert infer_model_category("gigachat/glm-5.1") == "main"
 
     def test_no_match_returns_other(self):
         with patch.dict(os.environ, {}, clear=True):

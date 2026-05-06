@@ -54,6 +54,8 @@ def normalize_model_identity(model: str) -> str:
     text = str(model or "").strip()
     if text.endswith(" (local)"):
         text = text[:-8]
+    if text.startswith("gigachat::"):
+        return f"gigachat/{text[len('gigachat::'):]}"
     if text.startswith("openai::"):
         return f"openai/{text[len('openai::'):]}"
     if text.startswith("openai-compatible::"):

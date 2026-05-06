@@ -177,6 +177,9 @@ class TestProviderAttributionHelper:
     def test_openai_compatible_prefix(self):
         assert self._get_fn()("openai-compatible::my-model") == "openai-compatible"
 
+    def test_gigachat_prefix(self):
+        assert self._get_fn()("gigachat::glm-5.1") == "gigachat"
+
     def test_cloudru_prefix(self):
         assert self._get_fn()("cloudru::GigaChat-2-Max") == "cloudru"
 
@@ -200,6 +203,7 @@ class TestPlanReviewProviderAttribution:
     @pytest.mark.parametrize("model,expected_provider", [
         ("anthropic::claude-opus-4.6", "anthropic"),
         ("openai::gpt-5.5", "openai"),
+        ("gigachat::glm-5.1", "gigachat"),
         ("openai-compatible::my-model", "openai-compatible"),
         ("cloudru::GigaChat-2-Max", "cloudru"),
         ("anthropic/claude-opus-4.6", "openrouter"),  # unprefixed → OpenRouter

@@ -130,9 +130,11 @@ def _normalize_model_identity(model: str) -> str:
 def infer_api_key_type(model: str, provider: Optional[str] = None) -> str:
     """Infer which API key is used based on model name."""
     provider_name = str(provider or "").strip().lower()
-    if provider_name in {"local", "openrouter", "openai", "anthropic", "openai-compatible", "cloudru"}:
+    if provider_name in {"local", "openrouter", "openai", "anthropic", "openai-compatible", "cloudru", "gigachat"}:
         return provider_name
     raw_model = _normalize_model_name(model)
+    if raw_model.startswith("gigachat::"):
+        return "gigachat"
     if raw_model.startswith("openai::"):
         return "openai"
     if raw_model.startswith("anthropic::"):
@@ -144,6 +146,8 @@ def infer_api_key_type(model: str, provider: Optional[str] = None) -> str:
     normalized = _normalize_model_identity(raw_model)
     if str(model or "").endswith(" (local)"):
         return "local"
+    if normalized.startswith("gigachat/"):
+        return "gigachat"
     if normalized.startswith("openai/"):
         return "openrouter"
     if normalized.startswith("openai-compatible/"):
@@ -171,6 +175,8 @@ def infer_provider_from_model(model: str) -> str:
     is correct regardless of which provider the model actually routes through.
     """
     raw = _normalize_model_name(str(model or ""))
+    if raw.startswith("gigachat::"):
+        return "gigachat"
     if raw.startswith("anthropic::"):
         return "anthropic"
     if raw.startswith("openai::"):

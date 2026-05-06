@@ -3,24 +3,36 @@ from ouroboros.server_runtime import (
     has_startup_ready_provider,
     has_supervisor_provider,
 )
+from ouroboros import gigachat as gigachat_runtime
 
 
 def test_has_startup_ready_provider_accepts_any_remote_key_or_local_routing():
+    assert has_startup_ready_provider({})
     assert has_startup_ready_provider({"OPENROUTER_API_KEY": "sk-or-test"})
     assert has_startup_ready_provider({"OPENAI_API_KEY": "sk-openai"})
     assert has_startup_ready_provider({"ANTHROPIC_API_KEY": "sk-ant"})
     assert has_startup_ready_provider({"OPENAI_COMPATIBLE_API_KEY": "compat-key"})
     assert has_startup_ready_provider({"CLOUDRU_FOUNDATION_MODELS_API_KEY": "cloudru-key"})
     assert has_startup_ready_provider({"USE_LOCAL_MAIN": True})
-    assert not has_startup_ready_provider({"LOCAL_MODEL_SOURCE": "Qwen/Qwen2.5-7B-Instruct-GGUF"})
+    assert has_startup_ready_provider({"LOCAL_MODEL_SOURCE": "Qwen/Qwen2.5-7B-Instruct-GGUF"})
 
 
 def test_has_supervisor_provider_requires_remote_credentials_or_local_routing():
+    assert has_supervisor_provider({})
     assert has_supervisor_provider({"OPENAI_API_KEY": "sk-openai"})
     assert has_supervisor_provider({"ANTHROPIC_API_KEY": "sk-ant"})
     assert has_supervisor_provider({"USE_LOCAL_MAIN": True})
     assert has_supervisor_provider({"USE_LOCAL_FALLBACK": "True"})
-    assert not has_supervisor_provider({"LOCAL_MODEL_SOURCE": "Qwen/Qwen2.5-7B-Instruct-GGUF"})
+    assert has_supervisor_provider({"LOCAL_MODEL_SOURCE": "Qwen/Qwen2.5-7B-Instruct-GGUF"})
+
+
+def test_apply_runtime_provider_defaults_seeds_gigachat_demo_defaults_on_blank_config():
+    normalized, changed, changed_keys = apply_runtime_provider_defaults({})
+
+    assert changed
+    assert set(changed_keys) == set(gigachat_runtime.demo_settings_defaults().keys())
+    for key, value in gigachat_runtime.demo_settings_defaults().items():
+        assert normalized[key] == value
 
 
 def test_apply_runtime_provider_defaults_autofills_official_openai_models():

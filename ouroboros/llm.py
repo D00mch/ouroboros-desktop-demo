@@ -16,11 +16,13 @@ import time
 import copy
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ouroboros import gigachat as gigachat_runtime
 from ouroboros.provider_models import normalize_anthropic_model_id
 
 log = logging.getLogger(__name__)
 
 DEFAULT_LIGHT_MODEL = "anthropic/claude-sonnet-4.6"
+_GIGACHAT_TOOL_RETRY_MAX_TOKENS = 128_000
 
 
 class LocalContextTooLargeError(RuntimeError):
@@ -298,6 +300,7 @@ class LLMClient:
     def _parse_provider_model(model: str) -> Tuple[str, str]:
         model_name = str(model or "").strip()
         for prefix, provider in (
+            ("gigachat::", "gigachat"),
             ("openai::", "openai"),
             ("anthropic::", "anthropic"),
             ("cloudru::", "cloudru"),
@@ -312,6 +315,8 @@ class LLMClient:
     def _qualified_model_name(provider: str, resolved_model: str) -> str:
         if provider == "openrouter":
             return resolved_model
+        if provider == "gigachat":
+            return f"gigachat/{resolved_model}"
         if provider == "openai":
             return f"openai/{resolved_model}"
         if provider == "anthropic":
@@ -331,6 +336,23 @@ class LLMClient:
                 "usage_model": usage_model,
                 "api_key": os.environ.get("OPENAI_API_KEY", ""),
                 "base_url": "https://api.openai.com/v1",
+                "default_headers": {},
+                "supports_openrouter_extensions": False,
+                "supports_generation_cost": False,
+            }
+
+        if provider == "gigachat":
+            return {
+                "provider": provider,
+                "resolved_model": resolved_model,
+                "usage_model": usage_model,
+                "api_key": "",
+                "base_url": "",
+                "llm_url": gigachat_runtime.llm_url(),
+                "bearer_token": gigachat_runtime.bearer_token(),
+                "client_cert": gigachat_runtime.mtls_cert_path(),
+                "client_key": gigachat_runtime.mtls_key_path(),
+                "verify": gigachat_runtime.tls_verify_value(),
                 "default_headers": {},
                 "supports_openrouter_extensions": False,
                 "supports_generation_cost": False,
@@ -589,6 +611,18 @@ class LLMClient:
                 temperature,
                 no_proxy,
             )
+        if target.get("provider") == "gigachat":
+            return await asyncio.to_thread(
+                self._chat_gigachat,
+                target,
+                messages,
+                tools,
+                reasoning_effort,
+                max_tokens,
+                tool_choice,
+                temperature,
+                no_proxy,
+            )
         if no_proxy:
             import httpx
             from openai import AsyncOpenAI
@@ -807,14 +841,48 @@ class LLMClient:
         return combined, "\n\n".join(reasoning_parts)
 
     @staticmethod
+    def _build_structured_tool_calls(
+        payload: Any,
+        allowed_tool_names: Optional[Set[str]] = None,
+        start_index: int = 0,
+    ) -> List[Dict[str, Any]]:
+        items = payload if isinstance(payload, list) else [payload]
+        if not all(isinstance(item, dict) for item in items):
+            raise ValueError("tool_call payload must be an object or list of objects")
+
+        allowed = {name for name in (allowed_tool_names or set()) if name}
+        tool_calls = []
+        for offset, item in enumerate(items):
+            i = start_index + offset
+            name = str(item.get("name", "")).strip()
+            args = item.get("arguments", {})
+            if not name:
+                raise ValueError("tool_call missing function name")
+            if allowed and name not in allowed:
+                raise ValueError(f"unknown tool '{name}'")
+            if not isinstance(args, dict):
+                raise ValueError("tool_call arguments must be an object")
+            tool_calls.append({
+                "id": f"call_local_{i}",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(args),
+                },
+            })
+        return tool_calls
+
+    @staticmethod
     def _parse_tool_calls_from_content(
         msg: Dict[str, Any],
         allowed_tool_names: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
-        """Parse <tool_call> XML tags from content into structured tool_calls.
+        """Parse structured tool-call text from content into ``tool_calls``.
 
         Works around llama-cpp-python not parsing Qwen/Hermes-style tool calls
-        (https://github.com/abetlen/llama-cpp-python/issues/1784).
+        (https://github.com/abetlen/llama-cpp-python/issues/1784) and also
+        upgrades OpenAI-style fenced JSON function payloads returned by some
+        compatible backends when they decline to emit native ``tool_calls``.
 
         Qwen3 models with ``enable_thinking=True`` (default) wrap their chain-of-
         thought in ``<think>...</think>`` before emitting the actual ``<tool_call>``
@@ -841,51 +909,60 @@ class LLMClient:
             return msg
 
         # Phase 2: Safety guard — only upgrade the response when the remaining
-        # text consists solely of one or more <tool_call> blocks.  Mixed prose
-        # (without a reasoning wrapper) is left as plain text.
+        # text is either pure <tool_call> blocks or a pure JSON / ```json
+        # payload. Mixed prose (without a reasoning wrapper) is left as plain
+        # text.
         full_pattern = re.compile(
             r"^(?:\s*<tool_call>\s*\{.*?\}\s*</tool_call>\s*)+$",
             re.DOTALL,
         )
-        if not full_pattern.fullmatch(stripped):
-            return msg
-
-        matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
-        if not matches:
-            return msg
-
-        allowed = {name for name in (allowed_tool_names or set()) if name}
-        tool_calls = []
-        for i, raw in enumerate(matches):
-            try:
-                raw_stripped = raw.strip()
+        matches = (
+            re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
+            if full_pattern.fullmatch(stripped)
+            else []
+        )
+        tool_calls: List[Dict[str, Any]] = []
+        if matches:
+            for raw in matches:
                 try:
-                    obj = json.loads(raw_stripped)
-                except json.JSONDecodeError:
-                    if raw_stripped.startswith("{{") and raw_stripped.endswith("}}"):
-                        obj = json.loads(raw_stripped[1:-1])
-                    else:
-                        raise
-                if not isinstance(obj, dict):
-                    raise ValueError("tool_call payload must be an object")
-                name = str(obj.get("name", "")).strip()
-                args = obj.get("arguments", {})
-                if not name:
-                    raise ValueError("tool_call missing function name")
-                if allowed and name not in allowed:
-                    raise ValueError(f"unknown tool '{name}'")
-                if not isinstance(args, dict):
-                    raise ValueError("tool_call arguments must be an object")
-                tool_calls.append({
-                    "id": f"call_local_{i}",
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": json.dumps(args),
-                    },
-                })
+                    raw_stripped = raw.strip()
+                    try:
+                        obj = json.loads(raw_stripped)
+                    except json.JSONDecodeError:
+                        if raw_stripped.startswith("{{") and raw_stripped.endswith("}}"):
+                            obj = json.loads(raw_stripped[1:-1])
+                        else:
+                            raise
+                    tool_calls.extend(
+                        LLMClient._build_structured_tool_calls(
+                            obj,
+                            allowed_tool_names,
+                            start_index=len(tool_calls),
+                        )
+                    )
+                except (json.JSONDecodeError, ValueError) as exc:
+                    log.warning("Rejected local <tool_call> block: %s (%s)", raw[:200], exc)
+                    return msg
+        else:
+            candidate = stripped
+            fence_match = re.fullmatch(
+                r"```(?:json)?\s*(.*?)\s*```",
+                stripped,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if fence_match:
+                candidate = fence_match.group(1).strip()
+            elif not candidate.startswith(("{", "[")):
+                return msg
+
+            try:
+                tool_calls = LLMClient._build_structured_tool_calls(
+                    json.loads(candidate),
+                    allowed_tool_names,
+                    start_index=0,
+                )
             except (json.JSONDecodeError, ValueError) as exc:
-                log.warning("Rejected local <tool_call> block: %s (%s)", raw[:200], exc)
+                log.warning("Rejected structured tool-call payload: %s", exc)
                 return msg
 
         if not tool_calls:
@@ -1421,7 +1498,12 @@ class LLMClient:
         """
         usage = resp_dict.get("usage") or {}
         choices = resp_dict.get("choices") or [{}]
-        msg = (choices[0] if choices else {}).get("message") or {}
+        first_choice = choices[0] if choices else {}
+        msg = first_choice.get("message") or {}
+        finish_reason = first_choice.get("finish_reason")
+        if finish_reason and isinstance(msg, dict) and not msg.get("finish_reason"):
+            msg = dict(msg)
+            msg["finish_reason"] = str(finish_reason)
 
         if not usage.get("cached_tokens"):
             prompt_details = usage.get("prompt_tokens_details") or {}
@@ -1464,6 +1546,113 @@ class LLMClient:
 
         return msg, usage
 
+    def _coerce_text_tool_calls(
+        self,
+        msg: Dict[str, Any],
+        tools: Optional[List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        clean_tools = self._sanitize_chat_completion_tools(tools) if tools else []
+        if not msg.get("tool_calls") and msg.get("content") and clean_tools:
+            allowed_tool_names = {
+                str(t.get("function", {}).get("name", "")).strip()
+                for t in clean_tools
+                if isinstance(t, dict)
+            }
+            return self._parse_tool_calls_from_content(msg, allowed_tool_names)
+        return msg
+
+    @staticmethod
+    def _should_retry_gigachat_tool_call(
+        msg: Dict[str, Any],
+        tools: Optional[List[Dict[str, Any]]],
+        max_tokens: int,
+    ) -> bool:
+        if not tools or max_tokens >= _GIGACHAT_TOOL_RETRY_MAX_TOKENS:
+            return False
+        if str(msg.get("finish_reason") or "").strip().lower() != "length":
+            return False
+        if msg.get("tool_calls"):
+            return False
+        return not str(msg.get("content") or "").strip()
+
+    def _chat_gigachat(
+        self,
+        target: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        reasoning_effort: str,
+        max_tokens: int,
+        tool_choice: str,
+        temperature: Optional[float] = None,
+        no_proxy: bool = False,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        import requests
+
+        llm_url = str(target.get("llm_url") or "").strip()
+        bearer_token = str(target.get("bearer_token") or "").strip()
+        cert_path = str(target.get("client_cert") or "").strip()
+        key_path = str(target.get("client_key") or "").strip()
+        verify_value = target.get("verify", False)
+
+        def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
+            request_kwargs: Dict[str, Any] = {
+                "headers": {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                "json": payload,
+                "timeout": (30, 3600),
+            }
+            if bearer_token:
+                request_kwargs["headers"]["Authorization"] = f"Bearer {bearer_token}"
+                request_kwargs["verify"] = verify_value if verify_value is not False else True
+            else:
+                missing = [
+                    path for path in (cert_path, key_path)
+                    if not path or not os.path.exists(path)
+                ]
+                if missing:
+                    raise RuntimeError(
+                        "GigaChat mTLS credentials not found. Expected files at "
+                        f"{gigachat_runtime.mtls_cert_path()} and {gigachat_runtime.mtls_key_path()}."
+                    )
+                request_kwargs["cert"] = (cert_path, key_path)
+                request_kwargs["verify"] = verify_value
+
+            if no_proxy:
+                with requests.Session() as session:
+                    session.trust_env = False
+                    response = session.post(llm_url, **request_kwargs)
+            else:
+                response = requests.post(llm_url, **request_kwargs)
+            response.raise_for_status()
+            return response.json()
+
+        kwargs = self._build_remote_kwargs(
+            target, messages, reasoning_effort, max_tokens, tool_choice, temperature, tools
+        )
+        msg, usage = self._normalize_remote_response(
+            _post(kwargs),
+            target,
+            skip_cost_fetch=True,
+        )
+        msg = self._coerce_text_tool_calls(msg, tools)
+        if self._should_retry_gigachat_tool_call(msg, tools, max_tokens):
+            retry_max_tokens = max(max_tokens, _GIGACHAT_TOOL_RETRY_MAX_TOKENS)
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["max_tokens"] = retry_max_tokens
+            log.info(
+                "Retrying GigaChat tool request after empty length response with max_tokens=%d",
+                retry_max_tokens,
+            )
+            msg, usage = self._normalize_remote_response(
+                _post(retry_kwargs),
+                target,
+                skip_cost_fetch=True,
+            )
+            msg = self._coerce_text_tool_calls(msg, tools)
+        return msg, usage
+
     def _chat_remote(
         self,
         target: Dict[str, Any],
@@ -1485,6 +1674,11 @@ class LLMClient:
         """
         if target.get("provider") == "anthropic":
             return self._chat_anthropic(
+                target, messages, tools, reasoning_effort, max_tokens, tool_choice, temperature,
+                no_proxy=no_proxy,
+            )
+        if target.get("provider") == "gigachat":
+            return self._chat_gigachat(
                 target, messages, tools, reasoning_effort, max_tokens, tool_choice, temperature,
                 no_proxy=no_proxy,
             )
@@ -1521,7 +1715,12 @@ class LLMClient:
                 # _fetch_generation_cost fallback (which uses requests.get with
                 # default proxy / OS lookup) is skipped — it would re-introduce
                 # the same SCDynamicStore code path that causes the SIGSEGV.
-                return self._normalize_remote_response(resp.model_dump(), target, skip_cost_fetch=True)
+                msg, usage = self._normalize_remote_response(
+                    resp.model_dump(),
+                    target,
+                    skip_cost_fetch=True,
+                )
+                return self._coerce_text_tool_calls(msg, tools), usage
             finally:
                 try:
                     _http_client.close()
@@ -1533,7 +1732,8 @@ class LLMClient:
             target, messages, reasoning_effort, max_tokens, tool_choice, temperature, tools
         )
         resp = client.chat.completions.create(**kwargs)
-        return self._normalize_remote_response(resp.model_dump(), target)
+        msg, usage = self._normalize_remote_response(resp.model_dump(), target)
+        return self._coerce_text_tool_calls(msg, tools), usage
 
     def _chat_openrouter(
         self,
@@ -1601,11 +1801,17 @@ class LLMClient:
 
     def default_model(self) -> str:
         """Return the single default model from env. LLM switches via tool if needed."""
-        return os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
+        return os.environ.get(
+            "OUROBOROS_MODEL",
+            gigachat_runtime.demo_settings_defaults()["OUROBOROS_MODEL"],
+        )
 
     def available_models(self) -> List[str]:
         """Return list of available models from env (for switch_model tool schema)."""
-        main = os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.7")
+        main = os.environ.get(
+            "OUROBOROS_MODEL",
+            gigachat_runtime.demo_settings_defaults()["OUROBOROS_MODEL"],
+        )
         code = os.environ.get("OUROBOROS_MODEL_CODE", "")
         light = os.environ.get("OUROBOROS_MODEL_LIGHT", "")
         models = [main]
