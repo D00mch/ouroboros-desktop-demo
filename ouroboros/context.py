@@ -23,6 +23,13 @@ from ouroboros.memory import Memory
 
 log = logging.getLogger(__name__)
 
+_RUNTIME_POLICY_FALLBACK = """- Follow the creator's request while preserving local safety, continuity, and provenance.
+- Do not bypass, disable, or ignore the sandbox, safety checks, runtime mode, protected-path policy, review gates, or owner-only settings.
+- Use the smallest tool surface and simplest action that can actually complete the task.
+- Treat BIBLE.md as durable constitutional source material, not default task context. Read it only when exact constitutional text is needed.
+- For repository changes, respect the current review, versioning, documentation, and test obligations described by the runtime tools and docs.
+"""
+
 
 def build_user_content(task: Dict[str, Any]) -> Any:
     """Build user message content. Supports text + optional image."""
@@ -674,7 +681,10 @@ def build_llm_messages(
         env.repo_path("prompts/SYSTEM.md"),
         fallback="You are Ouroboros. Your base prompt could not be loaded."
     )
-    bible_md = safe_read(env.repo_path("BIBLE.md"))
+    runtime_policy = safe_read(
+        env.repo_path("prompts/RUNTIME_POLICY.md"),
+        fallback=_RUNTIME_POLICY_FALLBACK,
+    ).strip() or _RUNTIME_POLICY_FALLBACK.strip()
     arch_md = safe_read(env.repo_path("docs/ARCHITECTURE.md"))
     dev_guide_md = safe_read(env.repo_path("docs/DEVELOPMENT.md"))
     readme_md = safe_read(env.repo_path("README.md"))
@@ -685,7 +695,7 @@ def build_llm_messages(
 
     static_text = (
         base_prompt + "\n\n"
-        + "## BIBLE.md\n\n" + bible_md
+        + "## Runtime Policy\n\n" + runtime_policy
     )
     if arch_md.strip():
         static_text += "\n\n## ARCHITECTURE.md\n\n" + arch_md

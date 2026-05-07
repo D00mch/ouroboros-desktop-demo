@@ -109,7 +109,7 @@ def _compact_markdown_sections(
 def _compact_local_static_text(text: str) -> str:
     return _compact_markdown_sections(
         text,
-        preserve_titles={"BIBLE.md"},
+        preserve_titles={"Runtime Policy", "BIBLE.md"},
         reason="Use a larger-context model or read the source file directly if this section becomes necessary.",
     )
 
@@ -142,6 +142,7 @@ def _compact_local_system_text(text: str) -> str:
     return _compact_markdown_sections(
         text,
         preserve_titles={
+            "Runtime Policy",
             "BIBLE.md",
             "Scratchpad",
             "Identity",

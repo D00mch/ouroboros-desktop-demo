@@ -55,6 +55,33 @@ def test_regular_and_evolution_tasks_include_all_docs():
     assert "DEVELOPMENT.md" in _build_system_text({"type": "evolution"})
 
 
+def test_normal_context_uses_runtime_policy_instead_of_bible_body():
+    from ouroboros.context import build_llm_messages
+
+    tmpdir = pathlib.Path(tempfile.mkdtemp())
+    env, memory = _make_env_and_memory(tmpdir)
+    (env.repo_dir / "BIBLE.md").write_text(
+        "UNIQUE_FULL_BIBLE_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+        encoding="utf-8",
+    )
+    (env.repo_dir / "prompts" / "RUNTIME_POLICY.md").write_text(
+        "SHORT_RUNTIME_POLICY_MARKER",
+        encoding="utf-8",
+    )
+
+    messages, _ = build_llm_messages(
+        env=env,
+        memory=memory,
+        task={"id": "test-2", "type": "task", "text": "hello"},
+    )
+    static_text = messages[0]["content"][0]["text"]
+
+    assert "## Runtime Policy" in static_text
+    assert "SHORT_RUNTIME_POLICY_MARKER" in static_text
+    assert "UNIQUE_FULL_BIBLE_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT" not in static_text
+    assert "## BIBLE.md" not in static_text
+
+
 def test_version_regexes_match_runtime_formats():
     badge = '[![Version 5.5.0](https://img.shields.io/badge/version-5.5.0-green.svg)](VERSION)'
     assert re.search(r'version[- ](\d+\.\d+\.\d+)', badge, re.IGNORECASE)
