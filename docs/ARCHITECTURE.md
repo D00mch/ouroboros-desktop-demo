@@ -597,8 +597,8 @@ immediately on a crash signal (SIGSEGV) with a diagnostic message suggesting
 | `/panic` | Kill workers (force), request restart exit |
 | `/restart` | Run `safe_restart` (git/deps/import preflight); on success, write `owner_restart_no_resume.flag` plus a stable-compatible skip marker, cancel active worker tasks with owner-restart result text, tell the owner the active task is stopping, exit 42 |
 | `/review` | Queue a deep self-review (1M-context single-pass Constitution review) |
-| `/evolve on\|off` | Toggle evolution mode in state, prune evolution tasks if off |
-| `/bg start\|stop\|status` | Control background consciousness |
+| `/evolve on\|off` | Toggle evolution mode in state, prune evolution tasks if off. Plain `python3 server.py` starts with persisted evolution mode off |
+| `/bg start\|stop\|status` | Control background consciousness. Plain `python3 server.py` starts with persisted background consciousness off |
 | `/status` | Send status text with budget breakdown |
 | (anything else) | Route to agent via `handle_chat_direct()` |
 
@@ -637,7 +637,7 @@ runtime authority.
 ### Tool execution (loop.py)
 
 - Pricing/cost estimation logic extracted to `pricing.py` (model pricing table, cost estimation, API key inference, usage event emission)
-- `build_llm_messages()` keeps the **3-block system prompt layout** stable for caching: (1) static governance/docs, (2) semi-stable identity + knowledge + patterns + deep review, (3) dynamic scratchpad/dialogue/registry/runtime sections.
+- `build_llm_messages()` keeps the **3-block system prompt layout** stable for caching: (1) static base prompt + runtime policy, (2) semi-stable identity + knowledge + patterns + deep review, (3) dynamic scratchpad/dialogue/registry/runtime sections.
 - `call_llm_with_retry()` now records `cache_hit_rate` in each `llm_round` event (`cached_tokens / prompt_tokens`, clamped to 0 when prompt tokens are zero) so cache behaviour is observable in logs and health checks.
 - `_sanitize_chat_completion_tools()` sorts tool schemas by function name before dispatch, stabilising cache keys across rounds while preserving deduplication of duplicate tool names.
 - Direct `anthropic::...` routing preserves multipart system text blocks (including `cache_control`) instead of flattening them into one string, so the same cache boundaries survive both OpenRouter-Anthropic and direct Anthropic paths.
@@ -1030,7 +1030,7 @@ the constitutional guard is that the file itself must remain non-deletable.
 - As of v3.16.0, the Memory Registry digest (from `memory/registry.md`) is injected into every LLM context to enable source-of-truth awareness.
 - As of v3.20.0, `patterns.md` (Pattern Register) is injected into semi-stable context, and execution reflections from `task_reflections.jsonl` are injected into dynamic context.
 - As of v4.29.4, `memory/knowledge/improvement-backlog.md` is maintained as a small durable advisory backlog. `agent_task_pipeline.py` nominates concrete follow-up items from execution reflections and structured review evidence after task completion, `context.py` injects only a compact digest into the dynamic block, and `consciousness.py` sees the same digest for grooming/nomination without auto-starting implementation.
-- As of v3.22.0, all docs are always in static context: BIBLE.md (180k), ARCHITECTURE.md (60k), DEVELOPMENT.md (30k), README.md (10k), CHECKLISTS.md (5k).
+- Normal task context no longer embeds full governance/docs files (`BIBLE.md`, `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `README.md`, `docs/CHECKLISTS.md`). `prompts/RUNTIME_POLICY.md` carries the short operational policy, while exact source text remains available through explicit reads and specialized review/consciousness flows.
 - `Health Invariants` are placed at the start of the dynamic context block, before drive state/runtime/recent sections, so warnings influence planning before the model reads the noisier tail sections.
 - Main task context now injects a dedicated `Review Continuity` section between runtime and recent-history sections:
   live repo gate status, stale markers, bypass reasons, open obligations, open commit-readiness debt,
@@ -1729,11 +1729,12 @@ installs.
 ### Docker (`Dockerfile`)
 
 ```
-python:3.10-slim + git → pip install requirements → playwright install-deps chromium → playwright install chromium → python server.py
+python:3.10-slim + git → pip install requirements → pip install optional browser deps → playwright install-deps chromium → playwright install chromium → python server.py
 Binds 0.0.0.0:8765, sets OUROBOROS_FILE_BROWSER_DEFAULT=/app.
 ```
 
-From v4.40.2, the `Dockerfile` installs all native system dependencies via
+From v4.40.2, the `Dockerfile` installs optional browser dependencies separately from
+the default server `requirements.txt`, then installs all native system dependencies via
 `python3 -m playwright install-deps chromium` (the authoritative Playwright-managed
 dependency resolver, not a hand-curated apt list) **and** the Chromium browser binary
 itself (`PLAYWRIGHT_BROWSERS_PATH=0 python3 -m playwright install chromium`) so browser

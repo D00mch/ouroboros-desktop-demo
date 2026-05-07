@@ -289,6 +289,10 @@ def _call_synthesis_llm(prompt: str, *, ctx: Any = None) -> Optional[str]:
     standard cost-accounting pipeline (same pattern as plan_review, reflection).
     """
     try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+
         from ouroboros.llm import LLMClient
         from ouroboros import config as _cfg
 

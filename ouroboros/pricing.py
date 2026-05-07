@@ -130,7 +130,7 @@ def _normalize_model_identity(model: str) -> str:
 def infer_api_key_type(model: str, provider: Optional[str] = None) -> str:
     """Infer which API key is used based on model name."""
     provider_name = str(provider or "").strip().lower()
-    if provider_name in {"local", "openrouter", "openai", "anthropic", "openai-compatible", "cloudru"}:
+    if provider_name in {"local", "openrouter", "openai", "anthropic", "openai-compatible", "cloudru", "gigachat-demo"}:
         return provider_name
     raw_model = _normalize_model_name(model)
     if raw_model.startswith("openai::"):

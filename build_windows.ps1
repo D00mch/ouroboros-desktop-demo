@@ -22,6 +22,9 @@ python -m pip install -q -r requirements-launcher.txt
 Write-Host "--- Installing agent dependencies into python-standalone ---"
 & "python-standalone\python.exe" -m pip install -q -r requirements.txt
 
+Write-Host "--- Installing optional browser dependencies into python-standalone ---"
+& "python-standalone\python.exe" -m pip install -q playwright playwright-stealth
+
 if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
 

@@ -31,7 +31,7 @@ def _make_env_and_memory(tmpdir: pathlib.Path):
     return env, memory
 
 
-def _build_system_text(task_overrides=None):
+def _build_static_text(task_overrides=None):
     from ouroboros.context import build_llm_messages
     tmpdir = pathlib.Path(tempfile.mkdtemp())
     env, memory = _make_env_and_memory(tmpdir)
@@ -39,20 +39,61 @@ def _build_system_text(task_overrides=None):
     if task_overrides:
         task.update(task_overrides)
     messages, _ = build_llm_messages(env=env, memory=memory, task=task)
-    content = messages[0]["content"]
-    return " ".join(block.get("text", "") for block in content if isinstance(block, dict))
+    return messages[0]["content"][0]["text"]
 
 
-def test_direct_chat_includes_development_readme_and_checklists():
-    text = _build_system_text({"_is_direct_chat": True})
-    assert "DEVELOPMENT.md" in text
-    assert "README.md" in text
-    assert "CHECKLISTS.md" in text
+def test_normal_context_does_not_embed_static_docs():
+    from ouroboros.context import build_llm_messages
+
+    tmpdir = pathlib.Path(tempfile.mkdtemp())
+    env, memory = _make_env_and_memory(tmpdir)
+    sentinels = {
+        "docs/ARCHITECTURE.md": "UNIQUE_ARCHITECTURE_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+        "docs/DEVELOPMENT.md": "UNIQUE_DEVELOPMENT_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+        "README.md": "UNIQUE_README_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+        "docs/CHECKLISTS.md": "UNIQUE_CHECKLISTS_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+    }
+    for relpath, body in sentinels.items():
+        (env.repo_dir / relpath).write_text(body, encoding="utf-8")
+
+    messages, _ = build_llm_messages(
+        env=env,
+        memory=memory,
+        task={"id": "test-docs", "type": "task", "text": "hello"},
+    )
+    static_text = messages[0]["content"][0]["text"]
+
+    for section in ("ARCHITECTURE.md", "DEVELOPMENT.md", "README.md", "CHECKLISTS.md"):
+        assert f"## {section}" not in static_text
+    for body in sentinels.values():
+        assert body not in static_text
 
 
-def test_regular_and_evolution_tasks_include_all_docs():
-    assert "DEVELOPMENT.md" in _build_system_text({"type": "task"})
-    assert "DEVELOPMENT.md" in _build_system_text({"type": "evolution"})
+def test_normal_context_uses_runtime_policy_instead_of_bible_body():
+    from ouroboros.context import build_llm_messages
+
+    tmpdir = pathlib.Path(tempfile.mkdtemp())
+    env, memory = _make_env_and_memory(tmpdir)
+    (env.repo_dir / "BIBLE.md").write_text(
+        "UNIQUE_FULL_BIBLE_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT",
+        encoding="utf-8",
+    )
+    (env.repo_dir / "prompts" / "RUNTIME_POLICY.md").write_text(
+        "SHORT_RUNTIME_POLICY_MARKER",
+        encoding="utf-8",
+    )
+
+    messages, _ = build_llm_messages(
+        env=env,
+        memory=memory,
+        task={"id": "test-2", "type": "task", "text": "hello"},
+    )
+    static_text = messages[0]["content"][0]["text"]
+
+    assert "## Runtime Policy" in static_text
+    assert "SHORT_RUNTIME_POLICY_MARKER" in static_text
+    assert "UNIQUE_FULL_BIBLE_BODY_SHOULD_NOT_BE_IN_NORMAL_CONTEXT" not in static_text
+    assert "## BIBLE.md" not in static_text
 
 
 def test_version_regexes_match_runtime_formats():

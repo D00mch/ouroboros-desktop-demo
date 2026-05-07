@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+DEMO_LLM_MODEL = "glm-5.1"
+DEMO_LLM_USAGE_MODEL = "glm-5.1"
+DEMO_LLM_URL = "https://gigachat-ift.sberdevices.delta.sbrf.ru/v1/chat/completions"
+DEMO_LLM_CERT_PATH = "~/crt/giga.pem"
+DEMO_LLM_KEY_PATH = "~/crt/giga.key"
+DEMO_LLM_CA_PATH = "~/crt/cp.pem"
+
+DEMO_MODEL_DEFAULTS = {
+    "main": DEMO_LLM_MODEL,
+    "code": DEMO_LLM_MODEL,
+    "light": DEMO_LLM_MODEL,
+    "fallback": DEMO_LLM_MODEL,
+}
+
 OPENAI_DIRECT_DEFAULTS = {
     "main": "openai::gpt-5.5",
     "code": "openai::gpt-5.5",

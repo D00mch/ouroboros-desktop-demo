@@ -16,7 +16,7 @@ from typing import Optional
 
 from ouroboros.platform_layer import pid_lock_acquire as _compat_pid_lock_acquire
 from ouroboros.platform_layer import pid_lock_release as _compat_pid_lock_release
-from ouroboros.provider_models import migrate_model_value
+from ouroboros.provider_models import DEMO_MODEL_DEFAULTS, migrate_model_value
 
 
 # ---------------------------------------------------------------------------
@@ -49,8 +49,10 @@ SETTINGS_DEFAULTS = {
     "ANTHROPIC_API_KEY": "",
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
-    "DIALOGS_GRPC_ENDPOINT": "https://ep.sberchat.sberbank.ru:443",
+    "DIALOGS_GRPC_ENDPOINT": "epbotsift.sberchat.sberbank.ru:443",
     "DIALOGS_BOT_TOKEN": "",
+    "DIALOGS_GROUP_ID": 2112986678,
+    "DIALOGS_ROOT_CERTIFICATES": "",
     "DIALOGS_APP_ID": 0,
     "DIALOGS_APP_TITLE": "Ouroboros",
     "DIALOGS_DEVICE_TITLE": "Ouroboros",
@@ -60,10 +62,10 @@ SETTINGS_DEFAULTS = {
     "DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS": True,
 
     "OUROBOROS_NETWORK_PASSWORD": "",
-    "OUROBOROS_MODEL": "anthropic/claude-opus-4.7",
-    "OUROBOROS_MODEL_CODE": "anthropic/claude-opus-4.7",
-    "OUROBOROS_MODEL_LIGHT": "anthropic/claude-sonnet-4.6",
-    "OUROBOROS_MODEL_FALLBACK": "anthropic/claude-sonnet-4.6",
+    "OUROBOROS_MODEL": DEMO_MODEL_DEFAULTS["main"],
+    "OUROBOROS_MODEL_CODE": DEMO_MODEL_DEFAULTS["code"],
+    "OUROBOROS_MODEL_LIGHT": DEMO_MODEL_DEFAULTS["light"],
+    "OUROBOROS_MODEL_FALLBACK": DEMO_MODEL_DEFAULTS["fallback"],
     "CLAUDE_CODE_MODEL": "claude-opus-4-7[1m]",
     "OUROBOROS_MAX_WORKERS": 5,
     "TOTAL_BUDGET": 10.0,
@@ -77,14 +79,17 @@ SETTINGS_DEFAULTS = {
     "OUROBOROS_EVO_COST_THRESHOLD": 0.10,
     "OUROBOROS_WEBSEARCH_MODEL": "gpt-5.2",
     # Pre-commit review: comma-separated provider-tagged model list
-    "OUROBOROS_REVIEW_MODELS": "openai/gpt-5.5,google/gemini-3.1-pro-preview,anthropic/claude-opus-4.7",
+    "OUROBOROS_REVIEW_MODELS": ",".join(
+        [DEMO_MODEL_DEFAULTS["main"], DEMO_MODEL_DEFAULTS["light"], DEMO_MODEL_DEFAULTS["fallback"]]
+    ),
     # Pre-commit review enforcement: advisory | blocking
     "OUROBOROS_REVIEW_ENFORCEMENT": "advisory",
     # Runtime mode: light | advanced | pro.
     # "advanced" preserves the existing self-modifying evolutionary layer and
     # is the safe default for current installs. "pro" is reserved for a
     # direct protected-surface lane guarded by the normal triad+scope review gate.
-    "OUROBOROS_RUNTIME_MODE": "advanced",
+    "OUROBOROS_RUNTIME_MODE": "light",
+    "OUROBOROS_DISABLE_AUX_LLM": True,
     # Optional EXTRA discovery root for an external skills/extensions
     # repository (the user's own git checkout). Ouroboros scans this on
     # top of the in-data-plane ``data/skills/`` tree (which is the
@@ -93,7 +98,7 @@ SETTINGS_DEFAULTS = {
     "OUROBOROS_SKILLS_REPO_PATH": "",
     "OUROBOROS_CLAWHUB_REGISTRY_URL": "https://clawhub.ai/api/v1",
     # Scope review: single-model blocking reviewer (runs after triad review)
-    "OUROBOROS_SCOPE_REVIEW_MODEL": "openai/gpt-5.5",
+    "OUROBOROS_SCOPE_REVIEW_MODEL": DEMO_MODEL_DEFAULTS["main"],
     # Reasoning effort per task type: none | low | medium | high
     # OUROBOROS_INITIAL_REASONING_EFFORT remains a legacy alias for task/chat.
     "OUROBOROS_EFFORT_TASK": "medium",
@@ -127,6 +132,16 @@ SETTINGS_DEFAULTS = {
 
 _VALID_EFFORTS = ("none", "low", "medium", "high")
 _DIRECT_PROVIDER_REVIEW_RUNS = 3
+_DEMO_DISABLED_REMOTE_ENV_KEYS = frozenset({
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_COMPATIBLE_API_KEY",
+    "OPENAI_COMPATIBLE_BASE_URL",
+    "CLOUDRU_FOUNDATION_MODELS_API_KEY",
+    "CLOUDRU_FOUNDATION_MODELS_BASE_URL",
+    "ANTHROPIC_API_KEY",
+})
 
 # Phase 2 three-layer refactor runtime mode. Separate axis from
 # ``OUROBOROS_REVIEW_ENFORCEMENT`` — review strictness and self-modification
@@ -396,6 +411,25 @@ def get_runtime_mode() -> str:
     return normalize_runtime_mode(
         os.environ.get("OUROBOROS_RUNTIME_MODE", default_val) or default_val
     )
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def auxiliary_llm_disabled() -> bool:
+    """Return True when non-chat/background LLM consumers must not run."""
+    default_disabled = get_runtime_mode() == "light"
+    return _env_bool("OUROBOROS_DISABLE_AUX_LLM", default_disabled)
+
+
+def auxiliary_llm_disable_reason() -> str:
+    if auxiliary_llm_disabled():
+        return "auxiliary LLM features are disabled in basic/light runtime"
+    return ""
 
 
 def get_skills_repo_path() -> str:
@@ -758,8 +792,9 @@ def apply_settings_to_env(settings: dict) -> None:
         "CLOUDRU_FOUNDATION_MODELS_API_KEY", "CLOUDRU_FOUNDATION_MODELS_BASE_URL",
         "ANTHROPIC_API_KEY",
         "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-        "DIALOGS_GRPC_ENDPOINT", "DIALOGS_BOT_TOKEN", "DIALOGS_APP_ID",
-        "DIALOGS_APP_TITLE", "DIALOGS_DEVICE_TITLE",
+        "DIALOGS_GRPC_ENDPOINT", "DIALOGS_BOT_TOKEN", "DIALOGS_GROUP_ID",
+        "DIALOGS_ROOT_CERTIFICATES", "DIALOGS_APP_ID", "DIALOGS_APP_TITLE",
+        "DIALOGS_DEVICE_TITLE",
         "DIALOGS_GRPC_TRUST_ALL_SERVER_CERTIFICATES",
         "DIALOGS_GRPC_KEEPALIVE_TIME_MS", "DIALOGS_GRPC_KEEPALIVE_TIMEOUT_MS",
         "DIALOGS_GRPC_KEEPALIVE_PERMIT_WITHOUT_CALLS",
@@ -773,7 +808,7 @@ def apply_settings_to_env(settings: dict) -> None:
         "OUROBOROS_REVIEW_MODELS", "OUROBOROS_REVIEW_ENFORCEMENT",
         "OUROBOROS_SCOPE_REVIEW_MODEL",
         # Phase 2 runtime-mode + skills-repo plumbing (no runtime gating yet).
-        "OUROBOROS_RUNTIME_MODE", "OUROBOROS_SKILLS_REPO_PATH",
+        "OUROBOROS_RUNTIME_MODE", "OUROBOROS_DISABLE_AUX_LLM", "OUROBOROS_SKILLS_REPO_PATH",
         # v4.50+ ClawHub marketplace registry URL.
         "OUROBOROS_CLAWHUB_REGISTRY_URL",
         "OUROBOROS_EFFORT_TASK", "OUROBOROS_EFFORT_EVOLUTION",
@@ -789,6 +824,9 @@ def apply_settings_to_env(settings: dict) -> None:
         "A2A_MAX_CONCURRENT", "A2A_TASK_TTL_HOURS",
     ]
     for k in env_keys:
+        if k in _DEMO_DISABLED_REMOTE_ENV_KEYS:
+            os.environ.pop(k, None)
+            continue
         val = settings.get(k)
         if val is None or val == "":
             os.environ.pop(k, None)

@@ -18,6 +18,9 @@ WORKDIR ${APP_HOME}
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install optional browser dependencies separately from the default server requirements
+RUN pip install --no-cache-dir playwright playwright-stealth
+
 # Install all Playwright native system dependencies for Chromium (authoritative list from Playwright)
 RUN python3 -m playwright install-deps chromium
 

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import logging
 
-from ouroboros.llm import LLMClient, LocalContextTooLargeError, add_usage
+from ouroboros.llm import DemoLLMHTTPError, LLMClient, LocalContextTooLargeError, add_usage
 from ouroboros.pricing import emit_llm_usage_event, estimate_cost, infer_model_category
 from ouroboros.utils import utc_now_iso, append_jsonl
 
@@ -226,6 +226,18 @@ def call_llm_with_retry(
                     "model": model,
                     "error": repr(e),
                 })
+                break
+            if isinstance(e, DemoLLMHTTPError) and e.status_code == 429:
+                append_jsonl(drive_logs / "events.jsonl", {
+                    "ts": utc_now_iso(),
+                    "type": "provider_rate_limited",
+                    "task_id": task_id,
+                    "round": round_idx,
+                    "attempt": attempt + 1,
+                    "model": model,
+                    "error": repr(e),
+                })
+                accumulated_usage["_last_llm_attempts"] = attempt + 1
                 break
             if attempt < max_retries - 1:
                 time.sleep(min(2 ** attempt * 2, 30))

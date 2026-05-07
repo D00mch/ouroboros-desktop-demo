@@ -124,7 +124,7 @@ The Settings page also includes:
 
 - optional `/api/model-catalog` lookup for configured providers
 - Telegram bridge configuration (`TELEGRAM_BOT_TOKEN`, primary chat binding, mirrored delivery controls)
-- SberChat/Dialog runtime configuration (`DIALOGS_BOT_TOKEN`, gRPC endpoint, app/device titles, keepalive options)
+- SberChat SDK runtime configuration (`DIALOGS_BOT_TOKEN`, endpoint, group id, root certificates)
 - a refactored desktop-first tabbed UI with searchable model pickers, segmented effort controls, masked-secret toggles, explicit `Clear` actions, and local-model controls
 
 ### Run Tests
@@ -143,11 +143,13 @@ Docker is for the web UI/runtime flow, not the desktop bundle. The container bin
 `0.0.0.0:8765` by default, and the image now also defaults `OUROBOROS_FILE_BROWSER_DEFAULT`
 to `${APP_HOME}` so the Files tab always has an explicit network-safe root inside the container.
 
-> **Browser tools on Linux/Docker:** The `Dockerfile` runs `playwright install-deps chromium`
-> (authoritative Playwright dependency resolver) and `playwright install chromium` so
-> `browse_page` and `browser_action` work out of the box in the container. For source
-> installs on Linux without Docker, run:
+> **Browser tools on Linux/Docker:** Browser automation is optional for source/pod
+> installs and is not part of the default `requirements.txt`. To enable
+> `browse_page` and `browser_action` outside Docker, install `pip install '.[browser]'`,
+> then run:
 > `python3 -m playwright install-deps chromium` (requires sudo / distro package access).
+> The `Dockerfile` installs those optional browser dependencies separately and bundles
+> Chromium so browser tools work out of the box in the container.
 
 Build the image:
 
@@ -360,7 +362,7 @@ Created on first launch:
 | Cloud.ru Foundation Models API Key | No | Cloud.ru Foundation Models provider |
 | Anthropic API Key | No | [console.anthropic.com](https://console.anthropic.com/settings/keys) — direct Anthropic runtime + Claude Agent SDK |
 | Telegram Bot Token | No | [@BotFather](https://t.me/BotFather) — enables the Telegram bridge |
-| SberChat Dialogs Bot Token | No | SberChat/Dialog bot credentials — enables the Dialogs gRPC bridge |
+| SberChat Dialogs Bot Token | No | SberChat/Dialog bot credentials — enables the SDK bridge for the configured group |
 | GitHub Token | No | [github.com/settings/tokens](https://github.com/settings/tokens) — enables remote sync |
 
 All keys are configured through the **Settings** page in the UI or during the first-run wizard.
@@ -416,9 +418,9 @@ Available in the chat interface:
 | `/panic` | Emergency stop. Kills ALL processes, closes the application. |
 | `/restart` | Soft restart. Saves state, kills workers, re-launches. |
 | `/status` | Shows active workers, task queue, and budget breakdown. |
-| `/evolve` | Toggle autonomous evolution mode (on/off). |
+| `/evolve` | Toggle autonomous evolution mode (on/off). Plain `python3 server.py` starts with persisted evolution mode off. |
 | `/review` | Queue a deep self-review: sends all agent code, prompts, docs, and core memory artifacts (identity, scratchpad, registry, WORLD, knowledge index, patterns, improvement-backlog) to a 1M-context model for Constitution-grounded analysis. Excludes vendored libraries and operational logs. Rejected with an explicit error if the assembled prompt (system + pack) exceeds ~850K estimated tokens — on 1M-context models the window is shared between input and output. |
-| `/bg` | Toggle background consciousness loop (start/stop/status). |
+| `/bg` | Toggle background consciousness loop (start/stop/status). Plain `python3 server.py` starts with persisted background consciousness off. |
 
 The same runtime actions are also exposed as compact buttons in the Chat header. All other messages are sent directly to the LLM.
 

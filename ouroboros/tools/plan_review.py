@@ -122,6 +122,10 @@ def _handle_plan_task(
     goal: str = "",
     files_to_touch: list | None = None,
 ) -> str:
+    from ouroboros.config import auxiliary_llm_disabled
+    if auxiliary_llm_disabled():
+        return "ERROR: Review is disabled in basic/light runtime."
+
     if not plan.strip():
         return "ERROR: plan parameter is required and must not be empty."
     if not goal.strip():

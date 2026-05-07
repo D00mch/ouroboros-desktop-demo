@@ -8,6 +8,7 @@ from typing import Awaitable, Callable
 
 from ouroboros.provider_models import (
     ANTHROPIC_DIRECT_DEFAULTS,
+    DEMO_MODEL_DEFAULTS,
     OPENAI_DIRECT_DEFAULTS,
     migrate_model_value,
 )
@@ -37,6 +38,35 @@ _DIRECT_PROVIDER_LEGACY_DEFAULTS = {
 }
 _ALL_MODEL_SLOT_KEYS = tuple(_DIRECT_PROVIDER_AUTO_DEFAULTS["openai"].keys())
 _DIRECT_PROVIDER_REVIEW_RUNS = 3
+_DEMO_PROVIDER_KEYS = (
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_COMPATIBLE_API_KEY",
+    "OPENAI_COMPATIBLE_BASE_URL",
+    "CLOUDRU_FOUNDATION_MODELS_API_KEY",
+    "CLOUDRU_FOUNDATION_MODELS_BASE_URL",
+    "ANTHROPIC_API_KEY",
+)
+_DEMO_RUNTIME_DEFAULTS = {
+    "OUROBOROS_MODEL": DEMO_MODEL_DEFAULTS["main"],
+    "OUROBOROS_MODEL_CODE": DEMO_MODEL_DEFAULTS["code"],
+    "OUROBOROS_MODEL_LIGHT": DEMO_MODEL_DEFAULTS["light"],
+    "OUROBOROS_MODEL_FALLBACK": DEMO_MODEL_DEFAULTS["fallback"],
+    "OUROBOROS_REVIEW_MODELS": ",".join([
+        DEMO_MODEL_DEFAULTS["main"],
+        DEMO_MODEL_DEFAULTS["light"],
+        DEMO_MODEL_DEFAULTS["fallback"],
+    ]),
+    "OUROBOROS_SCOPE_REVIEW_MODEL": DEMO_MODEL_DEFAULTS["main"],
+    "LOCAL_MODEL_SOURCE": "",
+    "LOCAL_MODEL_FILENAME": "",
+    "LOCAL_MODEL_CHAT_FORMAT": "",
+    "USE_LOCAL_MAIN": False,
+    "USE_LOCAL_CODE": False,
+    "USE_LOCAL_LIGHT": False,
+    "USE_LOCAL_FALLBACK": False,
+}
 _SCOPE_REVIEW_LEGACY_DEFAULTS = frozenset({
     "",
     "anthropic/claude-opus-4.6",
@@ -183,16 +213,7 @@ def classify_runtime_provider_change(before: dict, after: dict) -> str:
 
 def has_remote_provider(settings: dict) -> bool:
     """Return True when any supported remote-provider credential is configured."""
-    return any(
-        str(settings.get(key, "") or "").strip()
-        for key in (
-            "OPENROUTER_API_KEY",
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "OPENAI_COMPATIBLE_API_KEY",
-            "CLOUDRU_FOUNDATION_MODELS_API_KEY",
-        )
-    )
+    return True
 
 
 def has_local_model_source(settings: dict) -> bool:
@@ -210,47 +231,28 @@ def has_local_routing(settings: dict) -> bool:
 
 def has_startup_ready_provider(settings: dict) -> bool:
     """Return True when startup/onboarding should consider runtime configured."""
-    # Startup should only skip onboarding when the runtime can actually serve
-    # chat after boot. A local model source alone is not enough unless at least
-    # one lane is routed to that local runtime.
-    return has_remote_provider(settings) or has_local_routing(settings)
+    return True
 
 
 def has_supervisor_provider(settings: dict) -> bool:
     """Return True when the runtime has enough provider config to start supervisor."""
-    return has_remote_provider(settings) or has_local_routing(settings)
+    return True
 
 
 def apply_runtime_provider_defaults(settings: dict) -> tuple[dict, bool, list[str]]:
-    """Auto-fill safe runtime defaults for the agreed provider cases."""
+    """Force the demo runtime shape and remove persisted remote-provider credentials."""
     normalized = dict(settings)
-    provider = _exclusive_direct_remote_provider(normalized)
-
-    if not provider:
-        return normalized, False, []
-
     changed_keys: list[str] = []
-    provider_defaults = _DIRECT_PROVIDER_AUTO_DEFAULTS[provider]
-    for key in _ALL_MODEL_SLOT_KEYS:
-        raw_current = _setting_text(normalized, key)
-        current = migrate_model_value(provider, raw_current)
-        default = _setting_text(SETTINGS_DEFAULTS, key)
-        auto_value = provider_defaults[key]
-        legacy_defaults = _DIRECT_PROVIDER_LEGACY_DEFAULTS.get(provider, {}).get(key, set())
-        next_value = auto_value if current in {"", default, *legacy_defaults} else current
-        if next_value != raw_current:
-            normalized[key] = next_value
+
+    for key in _DEMO_PROVIDER_KEYS:
+        if str(normalized.get(key, "") or ""):
+            normalized[key] = ""
             changed_keys.append(key)
 
-    review_models = _normalize_direct_review_models(normalized, provider)
-    if review_models != _setting_text(normalized, "OUROBOROS_REVIEW_MODELS"):
-        normalized["OUROBOROS_REVIEW_MODELS"] = review_models
-        changed_keys.append("OUROBOROS_REVIEW_MODELS")
-
-    scope_review_model = _normalize_direct_scope_review_model(normalized, provider)
-    if scope_review_model != _setting_text(normalized, "OUROBOROS_SCOPE_REVIEW_MODEL"):
-        normalized["OUROBOROS_SCOPE_REVIEW_MODEL"] = scope_review_model
-        changed_keys.append("OUROBOROS_SCOPE_REVIEW_MODEL")
+    for key, value in _DEMO_RUNTIME_DEFAULTS.items():
+        if normalized.get(key) != value:
+            normalized[key] = value
+            changed_keys.append(key)
 
     return normalized, bool(changed_keys), changed_keys
 

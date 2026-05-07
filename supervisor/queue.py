@@ -135,6 +135,8 @@ def drain_all_pending() -> list:
 def enqueue_task(task: Dict[str, Any], front: bool = False) -> Dict[str, Any]:
     """Add task to PENDING queue."""
     t = dict(task)
+    if str(t.get("type") or "").strip().lower() in {"evolution", "review", "deep_self_review"}:
+        return t
     QUEUE_SEQ_COUNTER_REF["value"] += 1
     seq = QUEUE_SEQ_COUNTER_REF["value"]
     t.setdefault("priority", _task_priority(str(t.get("type") or "")))
@@ -234,6 +236,8 @@ def restore_pending_from_snapshot(max_age_sec: int = 900) -> int:
         for row in (snap.get("pending") or []):
             task = row.get("task") if isinstance(row, dict) else None
             if not isinstance(task, dict):
+                continue
+            if str(task.get("type") or "").strip().lower() in {"evolution", "review", "deep_self_review"}:
                 continue
             if not task.get("id") or not task.get("chat_id"):
                 continue
@@ -438,6 +442,13 @@ def build_evolution_task_text(cycle: int) -> str:
 
 def queue_deep_self_review_task(reason: str, model: str = "", force: bool = False) -> Optional[str]:
     """Queue a deep self-review task."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     st = load_state()
     owner_chat_id = st.get("owner_chat_id")
     if not owner_chat_id:
@@ -535,6 +546,17 @@ def enqueue_evolution_task_if_needed() -> None:
     Circuit breaker: pauses evolution after 3 consecutive failures to prevent
     burning budget on infinite retry loops.
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            st = load_state()
+            if bool(st.get("evolution_mode_enabled")):
+                st["evolution_mode_enabled"] = False
+                save_state(st)
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     if PENDING or RUNNING:
         return
     st = load_state()

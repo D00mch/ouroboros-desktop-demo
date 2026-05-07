@@ -25,6 +25,9 @@ echo "--- Installing launcher dependencies ---"
 echo "--- Installing agent dependencies into python-standalone ---"
 python-standalone/bin/pip3 install -q -r requirements.txt
 
+echo "--- Installing optional browser dependencies into python-standalone ---"
+python-standalone/bin/pip3 install -q playwright playwright-stealth
+
 rm -rf build dist
 
 export PYINSTALLER_CONFIG_DIR="$PWD/.pyinstaller-cache"

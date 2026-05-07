@@ -170,6 +170,13 @@ def _run_post_task_processing_async(
     (ARCHITECTURE.md "Only task summary remains async" was a misnomer — all
     LLM-heavy post-task work belongs off the critical path).
     """
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     task_snapshot = json.loads(json.dumps(task, ensure_ascii=False, default=str))
     usage_snapshot = json.loads(json.dumps(usage, ensure_ascii=False, default=str))
     trace_snapshot = json.loads(json.dumps(llm_trace, ensure_ascii=False, default=str))
@@ -290,15 +297,6 @@ def emit_task_results(
         except Exception:
             pass
 
-    _run_chat_consolidation(env, memory, llm, task, drive_logs)
-    _run_scratchpad_consolidation(env, memory, llm)
-    # Reflection, backlog persistence, and task summary all run in the daemon
-    # thread started below — LLM-heavy work must stay off the reply critical
-    # path so send_message reaches the UI without extra latency.
-    _run_post_task_processing_async(
-        env, task, usage, llm_trace, review_evidence, drive_logs,
-    )
-
 
 def _store_task_result(env: Any, task: Dict[str, Any], text: str,
                        usage: Dict[str, Any], llm_trace: Dict[str, Any],
@@ -357,6 +355,26 @@ Rounds: {rounds}, Cost: ${cost:.2f}
 
 def _run_task_summary(env, llm, task, usage, llm_trace, drive_logs, review_evidence=None):
     """Generate a detailed task summary and inject it into chat.jsonl."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            task_id = task.get("id", "unknown")
+            rounds = int(usage.get("rounds") or 0)
+            cost = float(usage.get("cost") or 0)
+            goal = _truncate_with_notice(task.get("text", ""), 200)
+            append_jsonl(drive_logs / "chat.jsonl", {
+                "ts": utc_now_iso(),
+                "direction": "system",
+                "type": "task_summary",
+                "task_id": task_id,
+                "text": f"Task {task_id} ({task.get('type', 'user')}): {goal}. {rounds}r, ${cost:.2f}.",
+                "tool_calls": len(llm_trace.get("tool_calls", []) or []),
+                "rounds": rounds,
+            })
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     try:
         from ouroboros.consolidator import (
             CONSOLIDATION_MODEL,
@@ -427,6 +445,13 @@ def _run_task_summary(env, llm, task, usage, llm_trace, drive_logs, review_evide
 def _run_chat_consolidation(env, memory, llm, task, drive_logs):
     """Run dialogue-block consolidation in a daemon thread."""
     try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
+    try:
         from ouroboros import consolidator as _c
 
         should_consolidate = getattr(_c, "should_consolidate_chat_blocks", None) or getattr(_c, "should_consolidate")
@@ -461,6 +486,13 @@ def _run_chat_consolidation(env, memory, llm, task, drive_logs):
 def _run_scratchpad_consolidation(env: Any, memory: Any, llm: Any) -> None:
     """Run scratchpad consolidation in a daemon thread."""
     try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
+    try:
         from ouroboros import consolidator as _c
 
         should_consolidate = getattr(_c, "should_consolidate_scratchpad_blocks", None) or getattr(_c, "should_consolidate_scratchpad")
@@ -491,6 +523,13 @@ def _run_reflection(env: Any, llm: Any, task: Dict[str, Any],
                     usage: Dict[str, Any], llm_trace: Dict[str, Any],
                     review_evidence: Dict[str, Any]) -> Dict[str, Any] | None:
     """Run execution reflection synchronously (process memory, Bible P1)."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     try:
         from ouroboros.reflection import (
             should_generate_reflection, generate_reflection, append_reflection,

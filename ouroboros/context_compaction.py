@@ -245,6 +245,13 @@ def compact_tool_history_llm(
     messages: list, keep_recent: int = 6,
 ) -> Tuple[list, Optional[Dict[str, Any]]]:
     """LLM-driven compaction of old reasoning rounds, with safe non-destructive fallback."""
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            return messages, None
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
+
     spans = _tool_round_spans(messages)
     if len(spans) <= keep_recent:
         return messages, None

@@ -23,6 +23,13 @@ from ouroboros.memory import Memory
 
 log = logging.getLogger(__name__)
 
+_RUNTIME_POLICY_FALLBACK = """- Follow the creator's request while preserving local safety, continuity, and provenance.
+- Do not bypass, disable, or ignore the sandbox, safety checks, runtime mode, protected-path policy, review gates, or owner-only settings.
+- Use the smallest tool surface and simplest action that can actually complete the task.
+- Treat BIBLE.md as durable constitutional source material, not default task context. Read it only when exact constitutional text is needed.
+- For repository changes, respect the current review, versioning, documentation, and test obligations described by the runtime tools and docs.
+"""
+
 
 def build_user_content(task: Dict[str, Any]) -> Any:
     """Build user message content. Supports text + optional image."""
@@ -318,41 +325,12 @@ def build_recent_sections(memory: Memory, env: Any, task_id: str = "") -> List[s
     if supervisor_summary:
         sections.append("## Supervisor\n\n" + supervisor_summary)
 
-    reflections_entries = memory.read_jsonl_tail("task_reflections.jsonl", 20)
-    reflections_text = _format_recent_reflections(reflections_entries, limit=10)
-    if reflections_text:
-        sections.append("## Execution reflections\n\n" + reflections_text)
-
     return sections
 
 
 def _collect_log_analysis_checks(env: Any, checks: List[str]) -> None:
     import hashlib
     import time as _time
-
-    try:
-        from ouroboros.consciousness import BackgroundConsciousness
-        consciousness_md = safe_read(env.repo_path("prompts/CONSCIOUSNESS.md"))
-        if consciousness_md:
-            whitelist = BackgroundConsciousness._BG_TOOL_WHITELIST
-            scan_text = re.sub(r'```.*?```', '', consciousness_md, flags=re.DOTALL)
-            tool_prefixes = (
-                "schedule_", "update_", "knowledge_", "browse_", "analyze_",
-                "web_", "send_", "repo_", "data_", "chat_", "list_", "get_",
-                "wait_", "set_", "memory_",
-            )
-            prompt_tool_refs = {
-                match.group(1)
-                for match in re.finditer(r'\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b', scan_text)
-                if match.group(1) in whitelist or any(match.group(1).startswith(prefix) for prefix in tool_prefixes)
-            }
-            phantom = prompt_tool_refs - whitelist
-            if phantom:
-                checks.append(f"WARNING: PROMPT-RUNTIME DRIFT — CONSCIOUSNESS.md references tools not in BG whitelist: {', '.join(sorted(phantom))}")
-            else:
-                checks.append("OK: prompt-runtime sync (no phantom tools)")
-    except Exception:
-        pass
 
     try:
         msg_hash_to_tasks: Dict[str, set] = {}
@@ -698,32 +676,22 @@ def build_llm_messages(
 
     Returns (messages, cap_info) tuple.
     """
-    task_type = str(task.get("type") or "user")
     base_prompt = safe_read(
         env.repo_path("prompts/SYSTEM.md"),
         fallback="You are Ouroboros. Your base prompt could not be loaded."
     )
-    bible_md = safe_read(env.repo_path("BIBLE.md"))
-    arch_md = safe_read(env.repo_path("docs/ARCHITECTURE.md"))
-    dev_guide_md = safe_read(env.repo_path("docs/DEVELOPMENT.md"))
-    readme_md = safe_read(env.repo_path("README.md"))
-    checklists_md = safe_read(env.repo_path("docs/CHECKLISTS.md"))
+    runtime_policy = safe_read(
+        env.repo_path("prompts/RUNTIME_POLICY.md"),
+        fallback=_RUNTIME_POLICY_FALLBACK,
+    ).strip() or _RUNTIME_POLICY_FALLBACK.strip()
     state_json = safe_read(env.drive_path("state/state.json"), fallback="{}")
 
     memory.ensure_files()
 
     static_text = (
         base_prompt + "\n\n"
-        + "## BIBLE.md\n\n" + bible_md
+        + "## Runtime Policy\n\n" + runtime_policy
     )
-    if arch_md.strip():
-        static_text += "\n\n## ARCHITECTURE.md\n\n" + arch_md
-    if dev_guide_md.strip():
-        static_text += "\n\n## DEVELOPMENT.md\n\n" + dev_guide_md
-    if readme_md.strip():
-        static_text += "\n\n## README.md\n\n" + readme_md
-    if checklists_md.strip():
-        static_text += "\n\n## CHECKLISTS.md\n\n" + checklists_md
 
     semi_stable_parts = []
     semi_stable_parts.extend(build_memory_sections(memory, partition="stable"))

@@ -222,6 +222,29 @@ def _run_reviewed_stage_cycle(
         return _failed(f"⚠️ GIT_ERROR (status): {_sanitize_git_error(str(exc))}")
     if not status.strip():
         return _failed("⚠️ GIT_NO_CHANGES: nothing to commit.")
+    try:
+        from ouroboros.config import auxiliary_llm_disabled
+        if auxiliary_llm_disabled():
+            try:
+                run_cmd(["git", "reset", "HEAD"], cwd=ctx.repo_dir)
+            except Exception:
+                pass
+            msg = "⚠️ COMMIT_BLOCKED: repo review/commit flow is disabled in basic/light runtime."
+            _record_commit_attempt(
+                ctx,
+                commit_message,
+                "blocked",
+                block_reason="auxiliary_llm_disabled",
+                block_details=msg,
+                duration_sec=time.time() - commit_start,
+            )
+            return {
+                "status": "blocked",
+                "message": msg,
+                "block_reason": "auxiliary_llm_disabled",
+            }
+    except Exception:
+        log.debug("Failed to evaluate auxiliary LLM policy", exc_info=True)
 
     # Advisory scope must match what the commit actually covers — use the FULL
     # staged index (`git diff --cached --name-only`), not the caller-supplied

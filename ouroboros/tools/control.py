@@ -1,4 +1,4 @@
-"""Control tools: restart, timeout settings, scheduling, review, chat history, model switching."""
+"""Control tools: restart, timeout settings, scheduling, chat history."""
 
 from __future__ import annotations
 
@@ -126,15 +126,6 @@ def _cancel_task(ctx: ToolContext, task_id: str) -> str:
     return f"Cancel requested: {task_id}"
 
 
-def _request_deep_self_review(ctx: ToolContext, reason: str) -> str:
-    from ouroboros.deep_self_review import is_review_available
-    available, model = is_review_available()
-    if not available:
-        return "❌ Deep self-review unavailable: requires OPENROUTER_API_KEY or OPENAI_API_KEY."
-    ctx.pending_events.append({"type": "deep_self_review_request", "reason": reason, "model": model, "ts": utc_now_iso()})
-    return f"Deep self-review requested (model: {model}). It will be queued and executed asynchronously."
-
-
 def _chat_history(ctx: ToolContext, count: int = 100, offset: int = 0, search: str = "") -> str:
     from ouroboros.memory import Memory
     mem = Memory(drive_root=ctx.drive_root)
@@ -221,66 +212,6 @@ def _update_identity(ctx: ToolContext, content: str) -> str:
     return f"OK: identity updated ({len(content)} chars)"
 
 
-def _toggle_evolution(ctx: ToolContext, enabled: bool) -> str:
-    """Toggle evolution mode on/off via supervisor event."""
-    ctx.pending_events.append({
-        "type": "toggle_evolution",
-        "enabled": bool(enabled),
-        "ts": utc_now_iso(),
-    })
-    state_str = "ON" if enabled else "OFF"
-    return f"OK: evolution mode toggled {state_str}."
-
-
-def _toggle_consciousness(ctx: ToolContext, action: str = "status") -> str:
-    """Control background consciousness: start, stop, or status."""
-    ctx.pending_events.append({
-        "type": "toggle_consciousness",
-        "action": action,
-        "ts": utc_now_iso(),
-    })
-    return f"OK: consciousness '{action}' requested."
-
-
-def _switch_model(ctx: ToolContext, model: str = "", effort: str = "") -> str:
-    """LLM-driven model/effort switch (Constitution P5: LLM-first).
-
-    Stored in ToolContext, applied on the next LLM call in the loop.
-    """
-    from ouroboros.llm import LLMClient, normalize_reasoning_effort
-    available = LLMClient().available_models()
-    changes = []
-
-    if model:
-        if model not in available:
-            return f"⚠️ Unknown model: {model}. Available: {', '.join(available)}"
-        ctx.active_model_override = model
-        
-        import os
-        use_local = False
-        if model == os.environ.get("OUROBOROS_MODEL") and os.environ.get("USE_LOCAL_MAIN", "").lower() in ("true", "1"):
-            use_local = True
-        elif model == os.environ.get("OUROBOROS_MODEL_CODE") and os.environ.get("USE_LOCAL_CODE", "").lower() in ("true", "1"):
-            use_local = True
-        elif model == os.environ.get("OUROBOROS_MODEL_LIGHT") and os.environ.get("USE_LOCAL_LIGHT", "").lower() in ("true", "1"):
-            use_local = True
-        elif model == os.environ.get("OUROBOROS_MODEL_FALLBACK") and os.environ.get("USE_LOCAL_FALLBACK", "").lower() in ("true", "1"):
-            use_local = True
-            
-        ctx.active_use_local_override = use_local
-        changes.append(f"model={model}{' (local)' if use_local else ''}")
-
-    if effort:
-        normalized = normalize_reasoning_effort(effort, default="medium")
-        ctx.active_effort_override = normalized
-        changes.append(f"effort={normalized}")
-
-    if not changes:
-        return f"Current available models: {', '.join(available)}. Pass model and/or effort to switch."
-
-    return f"OK: switching to {', '.join(changes)} on next round."
-
-
 def _get_task_result(ctx: ToolContext, task_id: str) -> str:
     """Read the result of a completed subtask."""
     data = load_task_result(ctx.drive_root, task_id)
@@ -343,13 +274,6 @@ def get_tools() -> List[ToolEntry]:
             "description": "Cancel a task by ID.",
             "parameters": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]},
         }, _cancel_task),
-        ToolEntry("request_deep_self_review", {
-            "name": "request_deep_self_review",
-            "description": "Request a deep self-review of the entire Ouroboros project. Uses a 1M-context model to review all code, docs, and memory against the Constitution. Results go to chat and memory. Requires OPENROUTER_API_KEY or OPENAI_API_KEY.",
-            "parameters": {"type": "object", "properties": {
-                "reason": {"type": "string", "description": "Why you want a review (context for the reviewer)"},
-            }, "required": ["reason"]},
-        }, _request_deep_self_review),
         ToolEntry("chat_history", {
             "name": "chat_history",
             "description": "Retrieve messages from chat history. Supports search.",
@@ -389,31 +313,6 @@ def get_tools() -> List[ToolEntry]:
                 "content": {"type": "string", "description": "Full identity content (prefer evolving over rewriting from scratch)"},
             }, "required": ["content"]},
         }, _update_identity),
-        ToolEntry("toggle_evolution", {
-            "name": "toggle_evolution",
-            "description": "Enable or disable evolution mode. When enabled, Ouroboros runs continuous self-improvement cycles.",
-            "parameters": {"type": "object", "properties": {
-                "enabled": {"type": "boolean", "description": "true to enable, false to disable"},
-            }, "required": ["enabled"]},
-        }, _toggle_evolution),
-        ToolEntry("toggle_consciousness", {
-            "name": "toggle_consciousness",
-            "description": "Control background consciousness: 'start', 'stop', or 'status'.",
-            "parameters": {"type": "object", "properties": {
-                "action": {"type": "string", "enum": ["start", "stop", "status"], "description": "Action to perform"},
-            }, "required": ["action"]},
-        }, _toggle_consciousness),
-        ToolEntry("switch_model", {
-            "name": "switch_model",
-            "description": "Switch to a different LLM model or reasoning effort level. "
-                           "Use when you need more power (complex code, deep reasoning) "
-                           "or want to save budget (simple tasks). Takes effect on next round.",
-            "parameters": {"type": "object", "properties": {
-                "model": {"type": "string", "description": "Model name (e.g. anthropic/claude-sonnet-4). Leave empty to keep current."},
-                "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh"],
-                           "description": "Reasoning effort level. Leave empty to keep current."},
-            }, "required": []},
-        }, _switch_model),
         ToolEntry("get_task_result", {
             "name": "get_task_result",
             "description": "Read the result of a completed subtask. Use after schedule_task to collect results.",

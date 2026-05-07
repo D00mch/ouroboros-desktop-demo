@@ -436,6 +436,10 @@ def _handle_list_skills(ctx: ToolContext, **_kwargs: Any) -> str:
 
 
 def _handle_review_skill(ctx: ToolContext, skill: str = "", **_kwargs: Any) -> str:
+    from ouroboros.config import auxiliary_llm_disabled
+    if auxiliary_llm_disabled():
+        return "⚠️ SKILL_REVIEW_DISABLED: review_skill is disabled in basic/light runtime."
+
     err = _skill_tool_preflight(ctx)
     if err:
         return err
