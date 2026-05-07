@@ -14,6 +14,7 @@ grpcio
 grpcio-tools
 protobuf
 googleapis-common-protos
+openpyxl>=3.1.0
 # optional: A2A (Agent-to-Agent) protocol — pip install 'ouroboros[a2a]'
 # a2a-sdk[http-server]>=0.3.20
 # optional: browser automation tools (for browse_page/browser_action)

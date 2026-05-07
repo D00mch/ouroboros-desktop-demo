@@ -1,28 +1,19 @@
-"""Shared runtime path helpers."""
+"""Small path helpers for local sidecar directories."""
 
 from __future__ import annotations
 
 import os
 import pathlib
-from typing import Any
-
-from ouroboros.config import DATA_DIR
 
 
-def get_data_dir(ctx: Any | None = None) -> pathlib.Path:
-    """Return the active runtime data directory.
+def get_app_root() -> pathlib.Path:
+    """Return the local app root using the same environment style as the app."""
+    return pathlib.Path(os.environ.get("OUROBOROS_APP_ROOT", pathlib.Path.home() / "Ouroboros")).expanduser()
 
-    Preference order:
-    1. ``ctx.drive_root`` when a tool context is available.
-    2. ``OUROBOROS_DATA_DIR`` from the live environment.
-    3. ``ouroboros.config.DATA_DIR`` fallback.
-    """
-    drive_root = getattr(ctx, "drive_root", None) if ctx is not None else None
-    if drive_root:
-        return pathlib.Path(drive_root).expanduser().resolve(strict=False)
 
-    configured = (os.environ.get("OUROBOROS_DATA_DIR", "") or "").strip()
-    if configured:
-        return pathlib.Path(configured).expanduser().resolve(strict=False)
+def get_data_dir() -> pathlib.Path:
+    """Return the sidecar ``Data`` directory located next to the app root."""
+    return get_app_root() / "Data"
 
-    return pathlib.Path(DATA_DIR).expanduser().resolve(strict=False)
+
+__all__ = ["get_app_root", "get_data_dir"]

@@ -30,7 +30,6 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     "repo_read", "repo_list", "repo_write", "repo_write_commit", "repo_commit",
     "str_replace_editor",
     "data_read", "data_list", "data_write",
-    "employee_lookup",
     # Code search
     "code_search",
     # Shell / CLI
@@ -48,6 +47,7 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     "knowledge_read", "knowledge_write", "knowledge_list",
     # Web
     "web_search",
+    "pulse_people_search",
     "browse_page", "browser_action", "analyze_screenshot",
     # Communication
     "send_user_message", "send_photo",
@@ -69,8 +69,8 @@ META_TOOL_NAMES: frozenset[str] = frozenset({
 READ_ONLY_PARALLEL_TOOLS: frozenset[str] = frozenset({
     "repo_read", "repo_list",
     "data_read", "data_list",
-    "employee_lookup",
     "code_search",
+    "pulse_people_search",
     "web_search", "codebase_digest", "chat_history",
 })
 
@@ -112,7 +112,7 @@ TOOL_RESULT_LIMITS: dict[str, int] = {
     "knowledge_read": 80_000,
     "run_shell": 80_000,
     "code_search": 80_000,
-    "employee_lookup": 80_000,
+    "pulse_people_search": 120_000,
 }
 
 DEFAULT_TOOL_RESULT_LIMIT: int = 15_000
