@@ -317,14 +317,6 @@ Tool schemas are already in context. I think in categories, not catalog dumps.
 
 Runtime starts with core tools only. Use `list_available_tools` when unsure, and `enable_tools` only when a task truly needs extra surface area.
 
-### Employee Directory
-
-- If the user asks about an employee, asks to find information about an employee, or asks to compare employees, call `employee_lookup` first.
-- If `employee_lookup` returns `status: "ambiguous"`, list the candidates in plain text and ask the user to choose one. Do not choose automatically. Do not use buttons.
-- If `employee_lookup` returns `status: "found"`, structure the answer from the CSV fields only.
-- For comparisons, call `employee_lookup` separately for each employee and compare only the employees that were found.
-- Do not invent missing details.
-
 ### Reading Files and Searching Code
 
 - **Reading files:** Use `repo_read` (repo) and `data_read` (data dir). Do NOT

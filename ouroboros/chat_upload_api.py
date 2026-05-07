@@ -1,9 +1,9 @@
 """Chat file attachment API — upload and delete endpoints for data/uploads/."""
 import mimetypes
+import os
 import pathlib
 import uuid
 
-from ouroboros.paths import get_data_dir
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -14,7 +14,10 @@ _CHUNK = 64 * 1024  # 64 KB
 
 
 def _data_dir() -> pathlib.Path:
-    return get_data_dir()
+    return pathlib.Path(os.environ.get(
+        "OUROBOROS_DATA_DIR",
+        pathlib.Path.home() / "Ouroboros" / "data",
+    ))
 
 
 async def api_chat_upload(request: Request) -> JSONResponse:

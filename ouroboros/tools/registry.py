@@ -318,7 +318,6 @@ class ToolEntry:
 CORE_TOOL_NAMES = {
     "repo_read", "repo_list", "repo_write", "repo_write_commit", "repo_commit",
     "data_read", "data_list", "data_write",
-    "employee_lookup",
     "run_shell", "claude_code_edit",
     "ensure_claude_cli",
     "git_status", "git_diff",
@@ -348,7 +347,7 @@ class ToolRegistry:
 
     _FROZEN_TOOL_MODULES = [
         "a2a", "browser", "ci", "claude_advisory_review", "compact_context", "control",
-        "core", "employee_directory", "evolution_stats", "git", "git_rollback", "github", "health",
+        "core", "evolution_stats", "git", "git_rollback", "github", "health",
         "knowledge", "memory_tools", "plan_review", "review", "search", "shell",
         # Phase 3 three-layer refactor: external skill surface
         # (list_skills / review_skill / skill_exec / toggle_skill).
