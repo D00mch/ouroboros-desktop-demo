@@ -47,6 +47,7 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     "knowledge_read", "knowledge_write", "knowledge_list",
     # Web
     "web_search",
+    "pulse_people_search",
     "browse_page", "browser_action", "analyze_screenshot",
     # Communication
     "send_user_message", "send_photo",
@@ -70,6 +71,7 @@ READ_ONLY_PARALLEL_TOOLS: frozenset[str] = frozenset({
     "repo_read", "repo_list",
     "data_read", "data_list",
     "code_search",
+    "pulse_people_search",
     "web_search", "codebase_digest", "chat_history",
 })
 
@@ -111,6 +113,7 @@ TOOL_RESULT_LIMITS: dict[str, int] = {
     "knowledge_read": 80_000,
     "run_shell": 80_000,
     "code_search": 80_000,
+    "pulse_people_search": 120_000,
 }
 
 DEFAULT_TOOL_RESULT_LIMIT: int = 15_000

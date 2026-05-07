@@ -320,6 +320,7 @@ CORE_TOOL_NAMES = {
     "data_read", "data_list", "data_write",
     "run_shell", "claude_code_edit",
     "ensure_claude_cli",
+    "pulse_people_search",
     "git_status", "git_diff",
     "pull_from_remote", "restore_to_head", "revert_commit",
     "schedule_task", "wait_for_task", "get_task_result",
@@ -349,6 +350,7 @@ class ToolRegistry:
         "a2a", "browser", "ci", "claude_advisory_review", "compact_context", "control",
         "core", "evolution_stats", "git", "git_rollback", "github", "health",
         "knowledge", "memory_tools", "plan_review", "review", "search", "shell",
+        "pulse_people",
         # Phase 3 three-layer refactor: external skill surface
         # (list_skills / review_skill / skill_exec / toggle_skill).
         "skill_exec",

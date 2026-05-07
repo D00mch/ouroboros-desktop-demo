@@ -40,6 +40,7 @@ TOOL_MODULES = [
     "ouroboros.tools.core",
     "ouroboros.tools.git",
     "ouroboros.tools.shell",
+    "ouroboros.tools.pulse_people",
     "ouroboros.tools.search",
     "ouroboros.tools.control",
     "ouroboros.tools.browser",
@@ -101,6 +102,7 @@ EXPECTED_TOOLS = [
     "run_shell", "claude_code_edit",
     "browse_page", "browser_action",
     "web_search",
+    "pulse_people_search",
     "chat_history", "update_scratchpad", "update_identity",
     "set_tool_timeout", "request_restart", "promote_to_stable", "request_deep_self_review",
     "schedule_task", "cancel_task",
@@ -196,6 +198,7 @@ def test_frozen_registry_includes_packaged_tool_modules(monkeypatch):
         "plan_task",
         "rollback_to_target",
         "run_ci_tests",
+        "pulse_people_search",
         # github.py is in _FROZEN_TOOL_MODULES — PR inspection tools must work in frozen builds
         "list_github_prs",
         "get_github_pr",

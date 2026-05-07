@@ -40,6 +40,7 @@ dependencies = [
     "grpcio-tools",
     "protobuf",
     "googleapis-common-protos",
+    "openpyxl>=3.1.0",
     # Declared explicitly so ``ouroboros/contracts/api_v1.py`` can rely on
     # ``typing_extensions.NotRequired`` on Python 3.10 (``typing.NotRequired``
     # is only available on 3.11+). In practice many transitive deps already
