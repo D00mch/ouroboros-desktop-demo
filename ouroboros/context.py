@@ -676,7 +676,6 @@ def build_llm_messages(
 
     Returns (messages, cap_info) tuple.
     """
-    task_type = str(task.get("type") or "user")
     base_prompt = safe_read(
         env.repo_path("prompts/SYSTEM.md"),
         fallback="You are Ouroboros. Your base prompt could not be loaded."
@@ -685,10 +684,6 @@ def build_llm_messages(
         env.repo_path("prompts/RUNTIME_POLICY.md"),
         fallback=_RUNTIME_POLICY_FALLBACK,
     ).strip() or _RUNTIME_POLICY_FALLBACK.strip()
-    arch_md = safe_read(env.repo_path("docs/ARCHITECTURE.md"))
-    dev_guide_md = safe_read(env.repo_path("docs/DEVELOPMENT.md"))
-    readme_md = safe_read(env.repo_path("README.md"))
-    checklists_md = safe_read(env.repo_path("docs/CHECKLISTS.md"))
     state_json = safe_read(env.drive_path("state/state.json"), fallback="{}")
 
     memory.ensure_files()
@@ -697,14 +692,6 @@ def build_llm_messages(
         base_prompt + "\n\n"
         + "## Runtime Policy\n\n" + runtime_policy
     )
-    if arch_md.strip():
-        static_text += "\n\n## ARCHITECTURE.md\n\n" + arch_md
-    if dev_guide_md.strip():
-        static_text += "\n\n## DEVELOPMENT.md\n\n" + dev_guide_md
-    if readme_md.strip():
-        static_text += "\n\n## README.md\n\n" + readme_md
-    if checklists_md.strip():
-        static_text += "\n\n## CHECKLISTS.md\n\n" + checklists_md
 
     semi_stable_parts = []
     semi_stable_parts.extend(build_memory_sections(memory, partition="stable"))
