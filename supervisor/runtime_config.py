@@ -11,6 +11,8 @@ class RuntimeConfig:
     github_repo: str
     dialogs_endpoint: str = ""
     dialogs_bot_token: str = ""
+    dialogs_group_id: int = 2112986678
+    dialogs_root_certificates: str = ""
     dialogs_app_id: int = 0
     dialogs_app_title: str = "Ouroboros"
     dialogs_device_title: str = "Ouroboros"
@@ -51,8 +53,10 @@ def load_runtime_config(env: Mapping[str, str], cwd: Path) -> RuntimeConfig:
         launcher_path=Path(env.get("OUROBOROS_LAUNCHER_PATH") or (cwd / "launcher.py")),
         github_user=env.get("GITHUB_USER", ""),
         github_repo=env.get("GITHUB_REPO", ""),
-        dialogs_endpoint=env.get("DIALOGS_GRPC_ENDPOINT", "https://ep.sberchat.sberbank.ru:443"),
+        dialogs_endpoint=env.get("DIALOGS_GRPC_ENDPOINT", "epbotsift.sberchat.sberbank.ru:443"),
         dialogs_bot_token=env.get("DIALOGS_BOT_TOKEN", ""),
+        dialogs_group_id=_parse_int_env(env, "DIALOGS_GROUP_ID", 2112986678),
+        dialogs_root_certificates=env.get("DIALOGS_ROOT_CERTIFICATES", ""),
         dialogs_app_id=int(env.get("DIALOGS_APP_ID", "0")),
         dialogs_app_title=env.get("DIALOGS_APP_TITLE", "Ouroboros"),
         dialogs_device_title=env.get("DIALOGS_DEVICE_TITLE", "Ouroboros"),

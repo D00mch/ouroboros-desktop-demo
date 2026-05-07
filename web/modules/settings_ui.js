@@ -265,11 +265,11 @@ export function renderSettingsPage() {
 
                     <div class="form-section">
                         <h3>SberChat</h3>
-                        <div class="settings-section-copy">Dialogs gRPC bridge for SberChat bot delivery. Changes require restart.</div>
+                        <div class="settings-section-copy">SberChat SDK bridge for one pinned group. Changes require restart.</div>
                         <div class="form-row">
                             <div class="form-field">
-                                <label>gRPC Endpoint</label>
-                                <input id="s-dialogs-endpoint" placeholder="https://ep.sberchat.sberbank.ru:443">
+                                <label>Endpoint</label>
+                                <input id="s-dialogs-endpoint" placeholder="epbotsift.sberchat.sberbank.ru:443">
                             </div>
                             ${secretField({
                                 id: 's-dialogs-bot-token',
@@ -277,6 +277,16 @@ export function renderSettingsPage() {
                                 label: 'Bot Token',
                                 placeholder: 'Dialogs bot token',
                             })}
+                        </div>
+                        <div class="form-grid two">
+                            <div class="form-field">
+                                <label>Group ID</label>
+                                <input id="s-dialogs-group-id" type="number" value="2112986678">
+                            </div>
+                            <div class="form-field">
+                                <label>Root Certificates</label>
+                                <input id="s-dialogs-root-certificates" placeholder="~/ru_certs/russian_trusted_bundle.pem">
+                            </div>
                         </div>
                         <div class="form-grid two">
                             <div class="form-field">

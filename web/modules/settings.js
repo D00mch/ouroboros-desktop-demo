@@ -223,6 +223,8 @@ export function initSettings({ state }) {
         applyInputValue('s-telegram-chat-id', s.TELEGRAM_CHAT_ID);
         applyInputValue('s-dialogs-endpoint', s.DIALOGS_GRPC_ENDPOINT);
         applyInputValue('s-dialogs-bot-token', s.DIALOGS_BOT_TOKEN);
+        if (s.DIALOGS_GROUP_ID !== null && s.DIALOGS_GROUP_ID !== undefined) byId('s-dialogs-group-id').value = s.DIALOGS_GROUP_ID;
+        applyInputValue('s-dialogs-root-certificates', s.DIALOGS_ROOT_CERTIFICATES);
         if (s.DIALOGS_APP_ID !== null && s.DIALOGS_APP_ID !== undefined) byId('s-dialogs-app-id').value = s.DIALOGS_APP_ID;
         applyInputValue('s-dialogs-app-title', s.DIALOGS_APP_TITLE);
         applyInputValue('s-dialogs-device-title', s.DIALOGS_DEVICE_TITLE);
@@ -389,6 +391,8 @@ export function initSettings({ state }) {
             CLOUDRU_FOUNDATION_MODELS_BASE_URL: byId('s-cloudru-base-url').value.trim(),
             TELEGRAM_CHAT_ID: byId('s-telegram-chat-id').value.trim(),
             DIALOGS_GRPC_ENDPOINT: byId('s-dialogs-endpoint').value.trim(),
+            DIALOGS_GROUP_ID: readInt('s-dialogs-group-id', 2112986678),
+            DIALOGS_ROOT_CERTIFICATES: byId('s-dialogs-root-certificates').value.trim(),
             DIALOGS_APP_ID: readInt('s-dialogs-app-id', 0),
             DIALOGS_APP_TITLE: byId('s-dialogs-app-title').value.trim(),
             DIALOGS_DEVICE_TITLE: byId('s-dialogs-device-title').value.trim(),

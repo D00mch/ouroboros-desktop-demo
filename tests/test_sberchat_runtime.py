@@ -56,8 +56,9 @@ def test_runtime_config_reads_dialogs_settings_and_data_dir(tmp_path):
     )
 
     assert cfg.drive_root == data_dir
-    assert cfg.dialogs_endpoint == "https://ep.sberchat.sberbank.ru:443"
+    assert cfg.dialogs_endpoint == "epbotsift.sberchat.sberbank.ru:443"
     assert cfg.dialogs_bot_token == "token"
+    assert cfg.dialogs_group_id == 2112986678
     assert cfg.dialogs_app_id == 12
 
 
@@ -133,6 +134,62 @@ def test_handle_runtime_inbound_preserves_sberchat_peer_id(tmp_path):
     assert st["owner_chat_source"] == "dialogs"
     assert st["provider_state"]["dialogs"]["seq"] == 15
     assert observed["chat_id"] == "peer-42"
+
+
+def test_dialogs_provider_treats_configured_group_as_single_user(tmp_path):
+    from supervisor.messaging.dialogs_provider import DialogsProvider
+    from supervisor.runtime_config import RuntimeConfig
+
+    cfg = RuntimeConfig(
+        repo_dir=tmp_path,
+        drive_root=tmp_path,
+        launcher_path=tmp_path / "launcher.py",
+        github_user="",
+        github_repo="",
+        dialogs_endpoint="epbotsift.sberchat.sberbank.ru:443",
+        dialogs_bot_token="token",
+        dialogs_group_id=2112986678,
+    )
+    provider = DialogsProvider(cfg)
+    update = SimpleNamespace(
+        peer=SimpleNamespace(id=2112986678, type=2),
+        sender_peer=SimpleNamespace(id=100500),
+        message=SimpleNamespace(text_message=SimpleNamespace(text="hello group")),
+    )
+
+    inbound, reason = provider._normalize_sdk_update_message(update)
+
+    assert reason == "accepted_group_text"
+    assert inbound.chat_id == "2112986678"
+    assert inbound.user_id == "2112986678"
+    assert inbound.text == "hello group"
+
+
+def test_dialogs_provider_ignores_other_groups(tmp_path):
+    from supervisor.messaging.dialogs_provider import DialogsProvider
+    from supervisor.runtime_config import RuntimeConfig
+
+    cfg = RuntimeConfig(
+        repo_dir=tmp_path,
+        drive_root=tmp_path,
+        launcher_path=tmp_path / "launcher.py",
+        github_user="",
+        github_repo="",
+        dialogs_endpoint="epbotsift.sberchat.sberbank.ru:443",
+        dialogs_bot_token="token",
+        dialogs_group_id=2112986678,
+    )
+    provider = DialogsProvider(cfg)
+    update = SimpleNamespace(
+        peer=SimpleNamespace(id=999, type=2),
+        sender_peer=SimpleNamespace(id=100500),
+        message=SimpleNamespace(text_message=SimpleNamespace(text="hello")),
+    )
+
+    inbound, reason = provider._normalize_sdk_update_message(update)
+
+    assert inbound is None
+    assert reason == "ignored_peer"
 
 
 def test_send_message_event_preserves_string_chat_id():

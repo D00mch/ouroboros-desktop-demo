@@ -9,6 +9,7 @@ websockets
 huggingface_hub
 PyYAML>=6.0
 claude-agent-sdk>=0.1.60
+dialog-bot-sdk>=3.0.8
 grpcio
 grpcio-tools
 protobuf
